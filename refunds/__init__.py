@@ -9,6 +9,11 @@ letters to send.
 
 from .administrators import DEFAULT_REGISTRY, lookup
 from .authorization import generate_authorization
+from .contract_parser import (
+    ParsedContract,
+    parse_contract_file,
+    parse_contract_text,
+)
 from .letters import (
     Letter,
     generate_letter,
@@ -56,4 +61,7 @@ __all__ = [
     "case_to_dict",
     "case_from_dict",
     "generate_authorization",
+    "ParsedContract",
+    "parse_contract_text",
+    "parse_contract_file",
 ]

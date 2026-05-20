@@ -1,0 +1,26 @@
+RETAIL INSTALLMENT SALE CONTRACT
+Springfield Honda  --  4500 Auto Mall Drive, Springfield, IL 62711
+
+Buyer: Jordan A. Rivera
+Date: 03/15/2023
+
+VEHICLE
+New 2023 Honda Accord EX-L
+VIN: 1HGCM82633A004352
+Odometer at delivery: 12
+
+ITEMIZATION OF AMOUNT FINANCED -- OPTIONAL PRODUCTS AND SERVICES
+
+  Vehicle Service Contract -- Zurich -- Contract No. VSC-7781234
+      Term: 72 months / 75,000 miles ................. $2,695.00
+
+  GAP Waiver -- Fidelity Warranty Services -- Agreement No. GAP-553021
+      Term: 72 months ............................... $895.00
+
+  Tire & Wheel Protection -- Safe-Guard -- Contract No. TW-2210045
+      Term: 60 months ............................... $799.00
+
+  Prepaid Maintenance Plan -- EasyCare -- Plan No. PM-99812
+      Term: 36 months / 30,000 miles ................ $640.00
+
+TOTAL OPTIONAL PRODUCTS ............................. $5,029.00
