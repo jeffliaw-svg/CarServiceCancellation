@@ -1,0 +1,647 @@
+import { useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import { Link } from "react-router-dom";
+import { api, moneyExact, type Intake } from "../api";
+import type { CaseView } from "../types";
+import { Logo } from "../components/site";
+
+const STEP_LABELS = [
+  "Your details",
+  "Documents",
+  "Confirm services",
+  "Your letters",
+];
+
+type Guard = <T>(fn: () => Promise<T>) => Promise<T | undefined>;
+
+interface StepProps {
+  view: CaseView | null;
+  setView: (v: CaseView) => void;
+  advance: (v: CaseView, next: number) => void;
+  guard: Guard;
+  busy: boolean;
+}
+
+/* ------------------------------------------------------------------ */
+
+function Stepper({ step }: { step: number }) {
+  return (
+    <div className="flex items-center">
+      {STEP_LABELS.map((label, i) => {
+        const n = i + 1;
+        const done = n < step;
+        const current = n === step;
+        return (
+          <div key={label} className="flex items-center">
+            <div className="flex items-center gap-2">
+              <div
+                className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${
+                  done
+                    ? "bg-accent text-white"
+                    : current
+                      ? "bg-ink text-white"
+                      : "bg-sand text-muted"
+                }`}
+              >
+                {done ? "✓" : n}
+              </div>
+              <span
+                className={`hidden text-sm sm:block ${
+                  current ? "font-medium text-ink" : "text-muted"
+                }`}
+              >
+                {label}
+              </span>
+            </div>
+            {n < STEP_LABELS.length && (
+              <div className="mx-3 h-px w-5 bg-line sm:w-8" />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function Panel({
+  step,
+  children,
+}: {
+  step: number;
+  children: React.ReactNode;
+}) {
+  return (
+    <motion.div
+      key={step}
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -16 }}
+      transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+    >
+      {children}
+    </motion.div>
+  );
+}
+
+function Heading({ kicker, title, lead }: { kicker: string; title: string; lead: string }) {
+  return (
+    <div className="mb-8">
+      <p className="text-xs font-semibold uppercase tracking-widest text-accent">
+        {kicker}
+      </p>
+      <h1 className="font-display mt-2 text-3xl md:text-4xl">{title}</h1>
+      <p className="mt-3 max-w-xl text-muted">{lead}</p>
+    </div>
+  );
+}
+
+function Label({ children }: { children: React.ReactNode }) {
+  return (
+    <label className="mb-1.5 block text-sm font-medium text-ink">
+      {children}
+    </label>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+
+function StepIntake({ advance, guard, busy }: StepProps) {
+  const [legalName, setLegalName] = useState("");
+  const [address, setAddress] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [vin, setVin] = useState("");
+  const [saleDate, setSaleDate] = useState("");
+
+  const ready =
+    legalName.trim() && address.trim() && vin.trim() && saleDate.trim();
+
+  async function submit() {
+    const intake: Intake = {
+      legal_name: legalName.trim(),
+      address_lines: address
+        .split("\n")
+        .map((l) => l.trim())
+        .filter(Boolean),
+      email: email.trim(),
+      phone: phone.trim(),
+      vin: vin.trim(),
+      sale_date: saleDate,
+    };
+    const v = await guard(() => api.createCase(intake));
+    if (v) advance(v, 2);
+  }
+
+  return (
+    <Panel step={1}>
+      <Heading
+        kicker="Step 1 of 4"
+        title="Tell us about the sale"
+        lead="Just enough to identify you and the vehicle. Everything else comes from your contract."
+      />
+      <div className="rounded-3xl border border-line bg-surface p-7">
+        <div className="grid gap-5">
+          <div>
+            <Label>Your full legal name</Label>
+            <input
+              className="field"
+              value={legalName}
+              onChange={(e) => setLegalName(e.target.value)}
+              placeholder="As it appears on the contract"
+            />
+          </div>
+          <div>
+            <Label>Mailing address</Label>
+            <textarea
+              className="field"
+              rows={2}
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              placeholder={"Street address\nCity, State ZIP"}
+            />
+            <p className="mt-1.5 text-xs text-muted">
+              Refund checks will be mailed here.
+            </p>
+          </div>
+          <div className="grid gap-5 sm:grid-cols-2">
+            <div>
+              <Label>Email (optional)</Label>
+              <input
+                className="field"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@example.com"
+              />
+            </div>
+            <div>
+              <Label>Phone (optional)</Label>
+              <input
+                className="field"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="(555) 010-2345"
+              />
+            </div>
+          </div>
+          <div className="grid gap-5 sm:grid-cols-2">
+            <div>
+              <Label>Vehicle VIN or license plate</Label>
+              <input
+                className="field"
+                value={vin}
+                onChange={(e) => setVin(e.target.value.toUpperCase())}
+                placeholder="1HGCM82633A004352"
+              />
+            </div>
+            <div>
+              <Label>Date you sold the vehicle</Label>
+              <input
+                className="field"
+                type="date"
+                value={saleDate}
+                onChange={(e) => setSaleDate(e.target.value)}
+              />
+            </div>
+          </div>
+        </div>
+        <button
+          className="btn btn-primary mt-7 w-full"
+          disabled={!ready || busy}
+          onClick={submit}
+        >
+          {busy ? "Saving…" : "Continue →"}
+        </button>
+      </div>
+    </Panel>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+
+function FileRow({
+  title,
+  hint,
+  accept,
+  fileName,
+  onPick,
+  busy,
+}: {
+  title: string;
+  hint: string;
+  accept: string;
+  fileName?: string;
+  onPick: (file: File) => void;
+  busy: boolean;
+}) {
+  return (
+    <label
+      className={`flex cursor-pointer items-center justify-between gap-4 rounded-2xl border border-dashed border-line bg-paper px-5 py-4 transition hover:border-accent ${
+        busy ? "pointer-events-none opacity-60" : ""
+      }`}
+    >
+      <div>
+        <p className="font-medium">{title}</p>
+        <p className="text-xs text-muted">{fileName ? `Selected: ${fileName}` : hint}</p>
+      </div>
+      <span className="btn btn-ghost !px-4 !py-2 !text-xs">
+        {fileName ? "Replace" : "Choose file"}
+      </span>
+      <input
+        type="file"
+        accept={accept}
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) onPick(file);
+        }}
+      />
+    </label>
+  );
+}
+
+function StepDocuments({ view, setView, advance, guard, busy }: StepProps) {
+  const [contractName, setContractName] = useState<string>();
+  const [billName, setBillName] = useState<string>();
+  const [pasted, setPasted] = useState("");
+  const [showPaste, setShowPaste] = useState(false);
+  if (!view) return null;
+
+  const products = view.products;
+
+  async function uploadContractFile(file: File) {
+    const v = await guard(() => api.uploadFile(view!.case_id, file, "contract"));
+    if (v) {
+      setView(v);
+      setContractName(file.name);
+    }
+  }
+
+  async function uploadPasted() {
+    const v = await guard(() =>
+      api.uploadText(view!.case_id, pasted, "contract"),
+    );
+    if (v) {
+      setView(v);
+      setContractName("pasted text");
+    }
+  }
+
+  async function uploadBill(file: File) {
+    const v = await guard(() =>
+      api.uploadFile(view!.case_id, file, "bill_of_sale"),
+    );
+    if (v) {
+      setView(v);
+      setBillName(file.name);
+    }
+  }
+
+  return (
+    <Panel step={2}>
+      <Heading
+        kicker="Step 2 of 4"
+        title="Add your paperwork"
+        lead="Upload the retail installment contract (or buyer's order). It lists every add-on product we can recover."
+      />
+      <div className="space-y-5 rounded-3xl border border-line bg-surface p-7">
+        <FileRow
+          title="Purchase contract"
+          hint="PDF or text. The document that itemizes your add-ons."
+          accept=".txt,.text,.pdf"
+          fileName={contractName}
+          onPick={uploadContractFile}
+          busy={busy}
+        />
+        <div className="text-center">
+          <button
+            className="text-xs font-medium text-accent hover:underline"
+            onClick={() => setShowPaste((s) => !s)}
+          >
+            {showPaste ? "Hide" : "…or paste the contract text instead"}
+          </button>
+        </div>
+        {showPaste && (
+          <div>
+            <textarea
+              className="field font-mono text-xs"
+              rows={6}
+              value={pasted}
+              onChange={(e) => setPasted(e.target.value)}
+              placeholder="Paste the itemized add-on section of your contract here…"
+            />
+            <button
+              className="btn btn-ghost mt-3 !py-2 !text-xs"
+              disabled={!pasted.trim() || busy}
+              onClick={uploadPasted}
+            >
+              Read pasted text
+            </button>
+          </div>
+        )}
+
+        <FileRow
+          title="Bill of sale (recommended)"
+          hint="Proof you sold the vehicle. Enclosed with every letter."
+          accept=".txt,.text,.pdf,.png,.jpg,.jpeg"
+          fileName={billName}
+          onPick={uploadBill}
+          busy={busy}
+        />
+
+        {view.parse_warnings.length > 0 && (
+          <div className="rounded-xl bg-sand px-4 py-3 text-xs text-muted">
+            {view.parse_warnings.map((w) => (
+              <p key={w}>&middot; {w}</p>
+            ))}
+          </div>
+        )}
+
+        {products.length > 0 && (
+          <div className="rounded-xl bg-accent-soft px-4 py-3 text-sm text-accent-deep">
+            Found <strong>{products.length}</strong> add-on{" "}
+            {products.length === 1 ? "product" : "products"} on your contract.
+          </div>
+        )}
+
+        <button
+          className="btn btn-primary w-full"
+          disabled={products.length === 0 || busy}
+          onClick={() => advance(view, 3)}
+        >
+          {products.length === 0
+            ? "Upload a contract to continue"
+            : "Review what you are owed →"}
+        </button>
+      </div>
+    </Panel>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+
+function StepConfirm({ view, advance, guard, busy }: StepProps) {
+  const [confirmed, setConfirmed] = useState<boolean[]>(
+    () => (view ? view.products.map(() => true) : []),
+  );
+  if (!view) return null;
+
+  const total = view.products.reduce(
+    (sum, p, i) =>
+      confirmed[i] && p.estimate.can_estimate ? sum + p.estimate.net_refund : sum,
+    0,
+  );
+  const keptCount = confirmed.filter(Boolean).length;
+
+  async function submit() {
+    const keep = view!.products
+      .filter((_, i) => confirmed[i])
+      .map((p) => p.index);
+    const v = await guard(() => api.confirm(view!.case_id, keep));
+    if (v) advance(v, 4);
+  }
+
+  return (
+    <Panel step={3}>
+      <Heading
+        kicker="Step 3 of 4"
+        title="Confirm each service"
+        lead="Here is what we read from your contract. Confirm the ones that are yours -- uncheck anything you do not recognize."
+      />
+      <div className="space-y-4">
+        {view.products.map((p, i) => {
+          const on = confirmed[i];
+          return (
+            <div
+              key={p.index}
+              className={`rounded-2xl border bg-surface p-6 transition ${
+                on ? "border-accent" : "border-line opacity-70"
+              }`}
+            >
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="max-w-xl">
+                  <h3 className="text-lg font-semibold">{p.product_type}</h3>
+                  <p className="mt-0.5 text-xs text-muted">
+                    {p.administrator}
+                    {p.contract_number ? ` · Contract ${p.contract_number}` : ""}
+                  </p>
+                  <p className="mt-3 text-sm leading-relaxed text-ink/80">
+                    {p.question}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-xs uppercase tracking-widest text-muted">
+                    Est. refund
+                  </p>
+                  <p className="font-display text-2xl text-accent">
+                    {p.estimate.can_estimate
+                      ? moneyExact(p.estimate.net_refund)
+                      : "TBD"}
+                  </p>
+                </div>
+              </div>
+              <div className="mt-5 flex gap-2">
+                <button
+                  className={`btn !py-2 !text-xs ${
+                    on ? "btn-primary" : "btn-ghost"
+                  }`}
+                  onClick={() =>
+                    setConfirmed((c) => c.map((v, j) => (j === i ? true : v)))
+                  }
+                >
+                  {on ? "✓ Confirmed" : "Yes, this is mine"}
+                </button>
+                <button
+                  className={`btn !py-2 !text-xs ${
+                    on ? "btn-ghost" : "btn-primary"
+                  }`}
+                  onClick={() =>
+                    setConfirmed((c) => c.map((v, j) => (j === i ? false : v)))
+                  }
+                >
+                  Not mine
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="mt-6 flex flex-wrap items-center justify-between gap-4 rounded-2xl bg-ink px-6 py-5 text-paper">
+        <div>
+          <p className="text-xs uppercase tracking-widest text-paper/60">
+            Estimated total across {keptCount} confirmed service
+            {keptCount === 1 ? "" : "s"}
+          </p>
+          <p className="font-display text-3xl">{moneyExact(total)}</p>
+        </div>
+        <button
+          className="btn btn-light"
+          disabled={keptCount === 0 || busy}
+          onClick={submit}
+        >
+          {busy ? "Saving…" : "Generate my letters →"}
+        </button>
+      </div>
+    </Panel>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+
+const KIND_LABEL: Record<string, string> = {
+  letter: "Certified-mail letter",
+  email: "Email draft",
+  authorization: "Authorization to sign",
+  checklist: "Mailing checklist",
+  bundle: "Everything, zipped",
+};
+
+function StepGenerate({ view, setView, guard, busy }: StepProps) {
+  if (!view) return null;
+  const done = view.generated.length > 0;
+
+  async function generate() {
+    const v = await guard(() => api.generate(view!.case_id));
+    if (v) setView(v);
+  }
+
+  if (!done) {
+    return (
+      <Panel step={4}>
+        <Heading
+          kicker="Step 4 of 4"
+          title="Generate your refund packet"
+          lead="We will draft a certified-mail letter for each confirmed service, plus an authorization for you to sign and a mailing checklist."
+        />
+        <div className="rounded-3xl border border-line bg-surface p-8 text-center">
+          <p className="mx-auto max-w-md text-muted">
+            {view.products.length} letter
+            {view.products.length === 1 ? "" : "s"} ready to be drafted for{" "}
+            <strong className="text-ink">{view.seller.legal_name}</strong>.
+          </p>
+          <button
+            className="btn btn-primary mt-6"
+            disabled={busy}
+            onClick={generate}
+          >
+            {busy ? "Drafting your letters…" : "Generate my letters"}
+          </button>
+        </div>
+      </Panel>
+    );
+  }
+
+  const bundle = view.generated.find((g) => g.kind === "bundle");
+  const rest = view.generated.filter((g) => g.kind !== "bundle");
+
+  return (
+    <Panel step={4}>
+      <Heading
+        kicker="All done"
+        title="Your refund packet is ready"
+        lead="Download everything, print it, sign the authorization, and send each letter by USPS Certified Mail."
+      />
+      {bundle && (
+        <a
+          href={api.fileUrl(view.case_id, bundle.name)}
+          className="mb-5 flex items-center justify-between rounded-2xl bg-accent px-6 py-5 text-white"
+        >
+          <div>
+            <p className="font-semibold">Download the full packet</p>
+            <p className="text-sm text-white/80">{bundle.description}</p>
+          </div>
+          <span className="btn btn-light !py-2 !text-xs">Download .zip</span>
+        </a>
+      )}
+      <div className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-surface">
+        {rest.map((g) => (
+          <a
+            key={g.name}
+            href={api.fileUrl(view.case_id, g.name)}
+            className="flex items-center justify-between gap-4 px-6 py-4 hover:bg-paper"
+          >
+            <div>
+              <p className="font-medium">
+                {KIND_LABEL[g.kind] ?? g.kind}
+              </p>
+              <p className="text-xs text-muted">{g.description}</p>
+            </div>
+            <span className="text-sm font-medium text-accent">Download</span>
+          </a>
+        ))}
+      </div>
+      <div className="mt-6 rounded-2xl bg-sand px-6 py-5 text-sm leading-relaxed text-muted">
+        <strong className="text-ink">Before you mail:</strong> the administrator
+        addresses were gathered from public sources and should be confirmed,
+        and you must sign the authorization. The mailing checklist walks you
+        through enclosing your bill of sale and sending each letter certified.
+      </div>
+      <div className="mt-6 text-center">
+        <Link to="/" className="text-sm font-medium text-accent hover:underline">
+          Back to home
+        </Link>
+      </div>
+    </Panel>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+
+export default function Wizard() {
+  const [step, setStep] = useState(1);
+  const [view, setView] = useState<CaseView | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const guard: Guard = async (fn) => {
+    setBusy(true);
+    setError(null);
+    try {
+      return await fn();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Something went wrong.");
+      return undefined;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  function advance(v: CaseView, next: number) {
+    setView(v);
+    setStep(next);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  const stepProps: StepProps = { view, setView, advance, guard, busy };
+
+  return (
+    <div className="min-h-screen">
+      <header className="border-b border-line bg-surface">
+        <div className="mx-auto flex max-w-3xl items-center justify-between px-6 py-4">
+          <Logo />
+          <span className="text-xs text-muted">Secure refund workup</span>
+        </div>
+      </header>
+
+      <div className="mx-auto max-w-3xl px-6 py-10">
+        <div className="mb-10 flex justify-center">
+          <Stepper step={step} />
+        </div>
+
+        {error && (
+          <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {error}
+          </div>
+        )}
+
+        <AnimatePresence mode="wait">
+          {step === 1 && <StepIntake key="s1" {...stepProps} />}
+          {step === 2 && <StepDocuments key="s2" {...stepProps} />}
+          {step === 3 && <StepConfirm key="s3" {...stepProps} />}
+          {step === 4 && <StepGenerate key="s4" {...stepProps} />}
+        </AnimatePresence>
+      </div>
+    </div>
+  );
+}
