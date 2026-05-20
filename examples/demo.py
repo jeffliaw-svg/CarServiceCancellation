@@ -21,8 +21,11 @@ from refunds import (  # noqa: E402
     estimate_case,
     generate_authorization,
     generate_letters_for_case,
+    parse_contract_file,
     total_estimated_refund,
     write_letters,
+    write_letters_pdf,
+    write_pdf,
 )
 
 
@@ -83,7 +86,28 @@ def build_sample_case() -> RefundCase:
     )
 
 
+def show_contract_parsing() -> None:
+    fixture = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "sample_contract.txt"
+    )
+    parsed = parse_contract_file(fixture)
+    print("Parsed sample retail installment contract")
+    print("-" * 60)
+    print(f"  Detected VIN: {parsed.detected_vin}")
+    for product in parsed.products:
+        print(
+            f"  {product.product_type.value:<28} "
+            f"{product.administrator_name or '(unknown admin)':<32} "
+            f"${product.price:,.2f}"
+        )
+    for warning in parsed.warnings:
+        print(f"  ! {warning}")
+    print()
+
+
 def main() -> None:
+    show_contract_parsing()
+
     case = build_sample_case()
     today = date(2026, 5, 20)
 
@@ -108,10 +132,14 @@ def main() -> None:
     letters = generate_letters_for_case(case, today=today, service_name="RefundRoute")
     out_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "out")
     paths = write_letters(letters, out_dir)
+    pdf_paths = write_letters_pdf(letters, out_dir)
 
     print(f"Drafted {len(letters)} letter(s) -> {out_dir}")
-    for letter, path in zip(letters, paths):
-        print(f"\n  To: {letter.recipient_name}  ({os.path.basename(path)})")
+    for letter, txt_path, pdf_path in zip(letters, paths, pdf_paths):
+        print(
+            f"\n  To: {letter.recipient_name}  "
+            f"({os.path.basename(txt_path)}, {os.path.basename(pdf_path)})"
+        )
         for warning in letter.warnings:
             print(f"    ! {warning}")
 
@@ -119,7 +147,13 @@ def main() -> None:
     auth_path = os.path.join(out_dir, f"{case.case_id}_authorization.txt")
     with open(auth_path, "w", encoding="utf-8") as handle:
         handle.write(auth_text)
-    print(f"\nDrafted authorization -> {os.path.basename(auth_path)}")
+    auth_pdf_path = write_pdf(
+        auth_text, os.path.join(out_dir, f"{case.case_id}_authorization.pdf")
+    )
+    print(
+        f"\nDrafted authorization -> {os.path.basename(auth_path)}, "
+        f"{os.path.basename(auth_pdf_path)}"
+    )
 
     store = CaseStore(os.path.join(out_dir, "cases"))
     store.save(case)

@@ -15,6 +15,7 @@ from datetime import date
 
 from .administrators import lookup
 from .models import AddOnProduct, Administrator, CancellationRoute, RefundCase
+from .pdf import write_pdf
 from .prorata import estimate_refund
 
 DEFAULT_SERVICE_NAME = "[Your Service Name]"
@@ -264,5 +265,19 @@ def write_letters(letters: list[Letter], out_dir: str) -> list[str]:
         path = os.path.join(out_dir, letter.filename)
         with open(path, "w", encoding="utf-8") as handle:
             handle.write(letter.body)
+        paths.append(path)
+    return paths
+
+
+def write_letters_pdf(letters: list[Letter], out_dir: str) -> list[str]:
+    """Render each letter to a printable .pdf file; return the written paths."""
+    os.makedirs(out_dir, exist_ok=True)
+    paths: list[str] = []
+    for letter in letters:
+        name = letter.filename
+        if name.endswith(".txt"):
+            name = name[:-4]
+        path = os.path.join(out_dir, f"{name}.pdf")
+        write_pdf(letter.body, path)
         paths.append(path)
     return paths

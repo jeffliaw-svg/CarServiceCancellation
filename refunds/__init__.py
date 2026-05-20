@@ -19,7 +19,9 @@ from .letters import (
     generate_letter,
     generate_letters_for_case,
     write_letters,
+    write_letters_pdf,
 )
+from .pdf import text_to_pdf, write_pdf
 from .models import (
     AddOnProduct,
     Administrator,
@@ -55,6 +57,9 @@ __all__ = [
     "generate_letter",
     "generate_letters_for_case",
     "write_letters",
+    "write_letters_pdf",
+    "text_to_pdf",
+    "write_pdf",
     "DEFAULT_REGISTRY",
     "lookup",
     "CaseStore",
