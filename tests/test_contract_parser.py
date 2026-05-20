@@ -64,6 +64,13 @@ def test_detects_vin():
     assert result.detected_vin == "1HGCM82633A004352"
 
 
+def test_detects_contract_date():
+    from datetime import date
+
+    result = parse_contract_text("Buyer copy\nDate: 03/15/2023\nVIN: X\n" + SAMPLE)
+    assert result.detected_purchase_date == date(2023, 3, 15)
+
+
 def test_section_headers_do_not_become_products():
     # "OPTIONAL PRODUCTS AND SERVICES" must not be parsed as a product.
     result = parse_contract_text(SAMPLE)

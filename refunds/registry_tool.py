@@ -32,6 +32,7 @@ def set_administrator(
     attn: str | None = None,
     route: str | None = None,
     phone: str | None = None,
+    email: str | None = None,
     source: str | None = None,
     notes: str | None = None,
     verified: bool | None = None,
@@ -52,6 +53,8 @@ def set_administrator(
         admin.cancellation_route = CancellationRoute(route)
     if phone is not None:
         admin.phone = phone
+    if email is not None:
+        admin.email = email
     if source is not None:
         admin.source = source
     if notes is not None:
@@ -85,6 +88,7 @@ def _format_admin(admin: Administrator) -> str:
         f"  route:   {admin.cancellation_route.value}",
         f"  attn:    {admin.attn}",
         f"  phone:   {admin.phone or '(none)'}",
+        f"  email:   {admin.email or '(none)'}",
         "  address: " + (
             "\n           ".join(admin.address_lines)
             if admin.address_lines
@@ -135,6 +139,7 @@ def _cmd_set(registry: dict[str, Administrator], args: argparse.Namespace) -> in
             attn=args.attn,
             route=args.route,
             phone=args.phone,
+            email=args.email,
             source=args.source,
             notes=args.notes,
             verified=verified,
@@ -173,6 +178,7 @@ def main(argv: list[str] | None = None) -> int:
         "--route", choices=[route.value for route in CancellationRoute]
     )
     set_cmd.add_argument("--phone")
+    set_cmd.add_argument("--email", help="cancellations email address")
     set_cmd.add_argument("--source", help="provenance of the address")
     set_cmd.add_argument("--notes")
     set_cmd.add_argument(

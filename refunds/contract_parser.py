@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Callable
 
 from .models import AddOnProduct, ProductType
@@ -28,6 +29,18 @@ _CONTRACT_RE = re.compile(
     re.IGNORECASE,
 )
 _VIN_RE = re.compile(r"\b([A-HJ-NPR-Z0-9]{17})\b")
+
+_MONTH_NAMES = {
+    "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
+    "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12,
+}
+_NUMERIC_DATE_RE = re.compile(r"\b(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})\b")
+_TEXT_DATE_RE = re.compile(
+    r"\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+"
+    r"(\d{1,2}),?\s+(\d{4})\b",
+    re.IGNORECASE,
+)
+_DATE_LABEL_RE = re.compile(r"date", re.IGNORECASE)
 
 # Distinctive substrings -> canonical administrator name (matches the registry).
 _ADMIN_ALIASES: dict[str, str] = {
@@ -78,7 +91,49 @@ _PRODUCT_PATTERNS: list[tuple[re.Pattern[str], ProductType]] = [
 class ParsedContract:
     products: list[AddOnProduct]
     detected_vin: str | None = None
+    detected_purchase_date: date | None = None
     warnings: list[str] = field(default_factory=list)
+
+
+def _safe_date(year: int, month: int, day: int) -> date | None:
+    try:
+        return date(year, month, day)
+    except ValueError:
+        return None
+
+
+def detect_purchase_date(text: str) -> date | None:
+    """Find the contract / purchase date, used as the coverage start date.
+
+    Prefers a date that sits just after the word "date"; otherwise falls
+    back to the earliest date in the document.
+    """
+    candidates: list[tuple[int, date]] = []
+    for match in _NUMERIC_DATE_RE.finditer(text):
+        month, day, year = (int(match.group(i)) for i in (1, 2, 3))
+        if year < 100:
+            year += 2000
+        found = _safe_date(year, month, day)
+        if found:
+            candidates.append((match.start(), found))
+    for match in _TEXT_DATE_RE.finditer(text):
+        month = _MONTH_NAMES[match.group(1).lower()[:3]]
+        found = _safe_date(int(match.group(3)), month, int(match.group(2)))
+        if found:
+            candidates.append((match.start(), found))
+
+    if not candidates:
+        return None
+
+    label_positions = [m.start() for m in _DATE_LABEL_RE.finditer(text)]
+    labeled = [
+        found
+        for position, found in candidates
+        if any(0 <= position - label <= 30 for label in label_positions)
+    ]
+    if labeled:
+        return min(labeled)
+    return min(found for _, found in candidates)
 
 
 def _match_product_type(line: str) -> ProductType | None:
@@ -181,8 +236,17 @@ def parse_contract_text(text: str) -> ParsedContract:
     if not products:
         warnings.append("No add-on products were recognized in the document.")
 
+    purchase_date = detect_purchase_date(text)
+    if purchase_date is None and products:
+        warnings.append(
+            "Contract date not found -- refund estimates need a coverage start date."
+        )
+
     return ParsedContract(
-        products=products, detected_vin=detected_vin, warnings=warnings
+        products=products,
+        detected_vin=detected_vin,
+        detected_purchase_date=purchase_date,
+        warnings=warnings,
     )
 
 

@@ -26,6 +26,7 @@ def _administrator_from_dict(data: dict) -> Administrator:
             data.get("cancellation_route", CancellationRoute.ADMINISTRATOR.value)
         ),
         phone=data.get("phone", ""),
+        email=data.get("email", ""),
         address_verified=bool(data.get("address_verified", False)),
         source=data.get("source", ""),
         verified_on=data.get("verified_on", ""),
@@ -40,6 +41,7 @@ def _administrator_to_dict(admin: Administrator) -> dict:
         "attn": admin.attn,
         "cancellation_route": admin.cancellation_route.value,
         "phone": admin.phone,
+        "email": admin.email,
         "address_verified": admin.address_verified,
         "source": admin.source,
         "verified_on": admin.verified_on,
