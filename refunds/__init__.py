@@ -8,6 +8,7 @@ letters to send.
 """
 
 from .administrators import DEFAULT_REGISTRY, lookup
+from .authorization import generate_authorization
 from .letters import (
     Letter,
     generate_letter,
@@ -54,4 +55,5 @@ __all__ = [
     "CaseStore",
     "case_to_dict",
     "case_from_dict",
+    "generate_authorization",
 ]

@@ -13,11 +13,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from refunds import (  # noqa: E402
     AddOnProduct,
+    CaseStore,
     ProductType,
     RefundCase,
     Seller,
     Vehicle,
     estimate_case,
+    generate_authorization,
     generate_letters_for_case,
     total_estimated_refund,
     write_letters,
@@ -113,10 +115,26 @@ def main() -> None:
         for warning in letter.warnings:
             print(f"    ! {warning}")
 
+    auth_text = generate_authorization(case, today=today, service_name="RefundRoute")
+    auth_path = os.path.join(out_dir, f"{case.case_id}_authorization.txt")
+    with open(auth_path, "w", encoding="utf-8") as handle:
+        handle.write(auth_text)
+    print(f"\nDrafted authorization -> {os.path.basename(auth_path)}")
+
+    store = CaseStore(os.path.join(out_dir, "cases"))
+    store.save(case)
+    print(f"Saved case to store -> {store.path_for(case.case_id)}")
+    print(f"Cases in store: {store.list_ids()}")
+
     print("\n" + "=" * 60)
     print("Sample letter (first):")
     print("=" * 60)
     print(letters[0].body)
+
+    print("=" * 60)
+    print("Authorization document:")
+    print("=" * 60)
+    print(auth_text)
 
 
 if __name__ == "__main__":
