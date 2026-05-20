@@ -186,27 +186,32 @@ def parse_contract_text(text: str) -> ParsedContract:
     )
 
 
-def extract_text(path: str, *, ocr: Callable[[str], str] | None = None) -> str:
+def extract_text(
+    path: str, *, ocr: Callable[[str], str] | str | None = None
+) -> str:
     """Read the text of a contract file.
 
     Plain-text files are read directly. For scanned PDFs or images, pass
-    `ocr` -- a callable mapping a file path to its extracted text (e.g. a
-    wrapper around an external OCR/PDF service). This is the seam where a
-    real OCR engine plugs in.
+    `ocr` as either an OCR backend name (e.g. "tesseract") or a callable
+    mapping a file path to its extracted text. See `refunds.ocr`.
     """
     if path.lower().endswith((".txt", ".text")):
         with open(path, encoding="utf-8") as handle:
             return handle.read()
     if ocr is not None:
+        if isinstance(ocr, str):
+            from .ocr import get_ocr_adapter
+
+            ocr = get_ocr_adapter(ocr)
         return ocr(path)
     raise NotImplementedError(
         f"Cannot extract text from {path!r}: only .txt is supported natively. "
-        "Pass ocr=<callable> to plug in an OCR engine that maps a file path "
-        "to its text."
+        "Pass ocr=<name|callable> to plug in an OCR engine -- e.g. "
+        'ocr="tesseract".'
     )
 
 
 def parse_contract_file(
-    path: str, *, ocr: Callable[[str], str] | None = None
+    path: str, *, ocr: Callable[[str], str] | str | None = None
 ) -> ParsedContract:
     return parse_contract_text(extract_text(path, ocr=ocr))

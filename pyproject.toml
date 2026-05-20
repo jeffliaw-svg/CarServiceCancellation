@@ -4,6 +4,11 @@ version = "0.1.0"
 description = "Pro-rata refund request generator for cancelled vehicle F&I add-on products"
 requires-python = ">=3.10"
 
+[project.optional-dependencies]
+# OCR backend for scanned contracts. Also requires the system Tesseract
+# engine, and Poppler for PDF rasterization.
+ocr = ["pytesseract>=0.3", "Pillow>=9", "pdf2image>=1.16"]
+
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
