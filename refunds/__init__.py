@@ -24,6 +24,7 @@ from .models import (
     Seller,
     Vehicle,
 )
+from .persistence import CaseStore, case_from_dict, case_to_dict
 from .prorata import (
     RefundEstimate,
     estimate_case,
@@ -50,4 +51,7 @@ __all__ = [
     "write_letters",
     "DEFAULT_REGISTRY",
     "lookup",
+    "CaseStore",
+    "case_to_dict",
+    "case_from_dict",
 ]
