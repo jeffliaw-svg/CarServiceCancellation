@@ -80,10 +80,10 @@ def test_letter_body_contains_key_identifiers():
 
 
 def test_dealer_route_addresses_the_selling_dealer():
-    # Fidelity Warranty Services is seeded with a DEALER cancellation route.
+    # JM&A Group is seeded with a DEALER cancellation route.
     product = AddOnProduct(
         product_type=ProductType.GAP,
-        administrator_name="Fidelity Warranty Services",
+        administrator_name="JM&A Group",
         contract_number="GAP-553021",
         price=895.00,
         term_months=72,
@@ -99,7 +99,7 @@ def test_unverified_administrator_address_raises_warning():
     product = _vsc()
     case = _case(product)
     letter = generate_letter(case, product, today=TODAY)
-    assert any("not verified" in w for w in letter.warnings)
+    assert any("verified" in w.lower() for w in letter.warnings)
 
 
 def test_missing_authorization_raises_warning():

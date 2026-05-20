@@ -58,7 +58,9 @@ class Administrator:
     attn: str = "Cancellations Department"
     cancellation_route: CancellationRoute = CancellationRoute.ADMINISTRATOR
     phone: str = ""
-    address_verified: bool = False
+    address_verified: bool = False  # True only once a human confirms the address
+    source: str = ""                # provenance of the address (URL / description)
+    verified_on: str = ""           # ISO date a human verified it
     notes: str = ""
 
 

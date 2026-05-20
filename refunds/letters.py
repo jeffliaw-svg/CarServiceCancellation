@@ -74,16 +74,25 @@ def _resolve_recipient(
             warnings.append("Selling dealer mailing address is not on file.")
         return recipient_name, address_lines, "Finance & Insurance (F&I) Department", warnings
 
-    if not admin.address_verified:
+    recipient_name = admin.name
+    address_lines = list(admin.address_lines)
+    if not address_lines:
+        address_lines = ["<<VERIFY: mailing address required>>"]
         warnings.append(
-            "Administrator mailing address is not verified -- confirm before mailing."
+            "Administrator mailing address is missing -- research it before mailing."
+        )
+    elif not admin.address_verified:
+        source_note = f" (source: {admin.source})" if admin.source else ""
+        warnings.append(
+            "Administrator mailing address has not been human-verified"
+            f"{source_note} -- verify before mailing."
         )
     if admin.cancellation_route == CancellationRoute.EITHER:
         warnings.append(
             "Cancellation route is uncertain; some administrators require the "
             "selling dealer to submit the cancellation."
         )
-    return admin.name, list(admin.address_lines), admin.attn, warnings
+    return recipient_name, address_lines, admin.attn, warnings
 
 
 def generate_letter(

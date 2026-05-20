@@ -7,7 +7,12 @@ the pro-rata refund owed on each product, and drafts the cancellation
 letters to send.
 """
 
-from .administrators import DEFAULT_REGISTRY, lookup
+from .administrators import (
+    DEFAULT_REGISTRY,
+    load_registry,
+    lookup,
+    save_registry,
+)
 from .authorization import generate_authorization
 from .contract_parser import (
     ParsedContract,
@@ -62,6 +67,8 @@ __all__ = [
     "write_pdf",
     "DEFAULT_REGISTRY",
     "lookup",
+    "load_registry",
+    "save_registry",
     "CaseStore",
     "case_to_dict",
     "case_from_dict",

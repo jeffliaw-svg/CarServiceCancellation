@@ -1,0 +1,106 @@
+{
+  "_comment": "Administrator registry. Addresses below were collected by web research on 2026-05-20 and are NOT human-verified -- address_verified is false for every entry. Confirm each address against the administrator's current cancellation instructions before mailing certified mail. Use 'python -m refunds.registry_tool' to maintain this file.",
+  "administrators": [
+    {
+      "name": "Assurant",
+      "address_lines": [
+        "Assurant Dealer Services",
+        "P.O. Box 7719",
+        "The Woodlands, TX 77387"
+      ],
+      "attn": "Cancellations Department",
+      "cancellation_route": "either",
+      "phone": "800-967-3633",
+      "address_verified": false,
+      "source": "Web research 2026-05-20 -- afasinc.com Assurant Dealer Services cancellation request",
+      "verified_on": "",
+      "notes": "Fax (832) 813-0538. Send written notice with a copy of the service contract and an odometer statement. Payment-plan financed products may route to Service Payment Plan instead."
+    },
+    {
+      "name": "EasyCare (APCO)",
+      "address_lines": [
+        "Automobile Protection Corporation",
+        "P.O. Box 8058",
+        "Norcross, GA 30091-8058"
+      ],
+      "attn": "Cancellations Department",
+      "cancellation_route": "administrator",
+      "phone": "800-538-4181",
+      "address_verified": false,
+      "source": "Web research 2026-05-20 -- easycare.com cancellation request form",
+      "verified_on": "",
+      "notes": "Cancellations email: cancellations@apcoholdings.com."
+    },
+    {
+      "name": "Fidelity Warranty Services",
+      "address_lines": [
+        "P.O. Box 8567",
+        "Deerfield Beach, FL 33443"
+      ],
+      "attn": "Cancellations Department",
+      "cancellation_route": "either",
+      "phone": "800-327-5172",
+      "address_verified": false,
+      "source": "Web research 2026-05-20 -- fidelitywarrantyservices.com customer support; FWS cancellation form",
+      "verified_on": "",
+      "notes": "FWS also accepts cancellations returned through the selling dealership. Street address: 350 Jim Moran Blvd, Deerfield Beach, FL 33442."
+    },
+    {
+      "name": "GWC Warranty",
+      "address_lines": [
+        "P.O. Box 7900",
+        "Wilkes-Barre, PA 18702"
+      ],
+      "attn": "Cancellations Department",
+      "cancellation_route": "either",
+      "phone": "866-945-6195",
+      "address_verified": false,
+      "source": "Web research 2026-05-20 -- gwcwarranty.com consumer FAQs and cancellation request form",
+      "verified_on": "",
+      "notes": "Dealer-purchased contracts are cancelled through the selling dealer; contracts bought direct can be cancelled with GWC. Overnight address: Showroom Level, 40 Coal Street, Wilkes-Barre, PA 18702. Requests must be received within 15 days of the cancellation date."
+    },
+    {
+      "name": "JM&A Group",
+      "address_lines": [
+        "FWS/JM&A",
+        "P.O. Box 8567",
+        "Deerfield Beach, FL 33443"
+      ],
+      "attn": "Cancellations Department",
+      "cancellation_route": "dealer",
+      "phone": "",
+      "address_verified": false,
+      "source": "Web research 2026-05-20 -- legal.jmagroup.com National Cancellation Form",
+      "verified_on": "",
+      "notes": "JM&A cancellations are typically submitted by the selling dealer; a direct cancellation form also exists. Shares a P.O. box with Fidelity Warranty Services. Allow three to four weeks for processing."
+    },
+    {
+      "name": "Safe-Guard Products International",
+      "address_lines": [
+        "Two Concourse Parkway, Suite 500",
+        "Atlanta, GA 30328"
+      ],
+      "attn": "Cancellations Department",
+      "cancellation_route": "administrator",
+      "phone": "800-742-7896",
+      "address_verified": false,
+      "source": "Web research 2026-05-20 -- safe-guardproducts.com contact-us (corporate HQ)",
+      "verified_on": "",
+      "notes": "Address shown is the corporate headquarters; no dedicated cancellation mailing address was found. Safe-Guard also offers an online cancellation portal."
+    },
+    {
+      "name": "Zurich",
+      "address_lines": [
+        "P.O. Box 7922",
+        "Shawnee Mission, KS 66207"
+      ],
+      "attn": "Zurich F&I Customer Service",
+      "cancellation_route": "either",
+      "phone": "888-835-5063",
+      "address_verified": false,
+      "source": "Web research 2026-05-20 -- zurichna.com auto owner FAQ; Zurich F&I cancellation form",
+      "verified_on": "",
+      "notes": "Refunds are typically issued through the selling dealership; if a lien exists the refund is sent to the lienholder. Fax (913) 664-3247."
+    }
+  ]
+}

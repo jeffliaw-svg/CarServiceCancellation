@@ -1,66 +1,83 @@
-"""Registry of add-on product administrators.
+"""Registry of add-on product administrators, loaded from a data file.
 
-This is a starter set of real, well-known F&I product administrators.
-Mailing addresses and cancellation routes are intentionally left
-UNVERIFIED -- confirming them is manual research and is the core
-proprietary asset of the service. The letter engine surfaces a warning
-on any letter built from an unverified entry.
+The registry lives in `data/administrators.json` so it can be maintained
+without code changes (see `registry_tool`). Every seeded address was
+collected by web research and is NOT human-verified -- `address_verified`
+is false until a person confirms it. The letter engine surfaces a
+warning on any letter built from an unverified or missing address.
 """
 
 from __future__ import annotations
 
+import json
+import os
+
 from .models import Administrator, CancellationRoute
 
-
-def _unverified_address() -> list[str]:
-    return ["<<VERIFY: mailing address required>>"]
+_DATA_PATH = os.path.join(os.path.dirname(__file__), "data", "administrators.json")
 
 
-def _seed() -> dict[str, Administrator]:
+def _administrator_from_dict(data: dict) -> Administrator:
+    return Administrator(
+        name=data["name"],
+        address_lines=list(data.get("address_lines") or []),
+        attn=data.get("attn", "Cancellations Department"),
+        cancellation_route=CancellationRoute(
+            data.get("cancellation_route", CancellationRoute.ADMINISTRATOR.value)
+        ),
+        phone=data.get("phone", ""),
+        address_verified=bool(data.get("address_verified", False)),
+        source=data.get("source", ""),
+        verified_on=data.get("verified_on", ""),
+        notes=data.get("notes", ""),
+    )
+
+
+def _administrator_to_dict(admin: Administrator) -> dict:
+    return {
+        "name": admin.name,
+        "address_lines": list(admin.address_lines),
+        "attn": admin.attn,
+        "cancellation_route": admin.cancellation_route.value,
+        "phone": admin.phone,
+        "address_verified": admin.address_verified,
+        "source": admin.source,
+        "verified_on": admin.verified_on,
+        "notes": admin.notes,
+    }
+
+
+def load_registry(path: str = _DATA_PATH) -> dict[str, Administrator]:
+    """Load the administrator registry from a JSON data file."""
+    with open(path, encoding="utf-8") as handle:
+        data = json.load(handle)
     admins = [
-        Administrator(
-            name="Zurich",
-            address_lines=_unverified_address(),
-            cancellation_route=CancellationRoute.EITHER,
-            notes="Zurich-administered VSC/GAP cancellations are often processed "
-            "through the selling dealer; confirm the route for this contract.",
-        ),
-        Administrator(
-            name="Fidelity Warranty Services",
-            address_lines=_unverified_address(),
-            cancellation_route=CancellationRoute.DEALER,
-            notes="FWS typically requires the selling dealer to submit cancellations.",
-        ),
-        Administrator(
-            name="JM&A Group",
-            address_lines=_unverified_address(),
-            cancellation_route=CancellationRoute.DEALER,
-        ),
-        Administrator(
-            name="Safe-Guard Products International",
-            address_lines=_unverified_address(),
-            cancellation_route=CancellationRoute.ADMINISTRATOR,
-        ),
-        Administrator(
-            name="EasyCare (APCO)",
-            address_lines=_unverified_address(),
-            cancellation_route=CancellationRoute.ADMINISTRATOR,
-        ),
-        Administrator(
-            name="Assurant",
-            address_lines=_unverified_address(),
-            cancellation_route=CancellationRoute.EITHER,
-        ),
-        Administrator(
-            name="GWC Warranty",
-            address_lines=_unverified_address(),
-            cancellation_route=CancellationRoute.ADMINISTRATOR,
-        ),
+        _administrator_from_dict(item) for item in data.get("administrators", [])
     ]
-    return {a.name.lower(): a for a in admins}
+    return {admin.name.lower(): admin for admin in admins}
 
 
-DEFAULT_REGISTRY: dict[str, Administrator] = _seed()
+def save_registry(
+    registry: dict[str, Administrator], path: str = _DATA_PATH
+) -> str:
+    """Write the registry back to its JSON data file, sorted by name."""
+    payload = {
+        "_comment": (
+            "Administrator registry. Confirm each address against the "
+            "administrator's current cancellation instructions before mailing. "
+            "Use 'python -m refunds.registry_tool' to maintain this file."
+        ),
+        "administrators": [
+            _administrator_to_dict(registry[key]) for key in sorted(registry)
+        ],
+    }
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle, indent=2)
+        handle.write("\n")
+    return path
+
+
+DEFAULT_REGISTRY: dict[str, Administrator] = load_registry()
 
 
 def lookup(
@@ -68,9 +85,9 @@ def lookup(
 ) -> Administrator:
     """Resolve an administrator by name.
 
-    Always returns an Administrator. An unknown name yields an unverified
-    placeholder so a draft letter can still be produced (flagged for
-    research) rather than failing the case outright.
+    Always returns an Administrator. An unknown name yields a placeholder
+    with no address (flagged for research) so a draft letter can still be
+    produced rather than failing the case outright.
     """
     reg = DEFAULT_REGISTRY if registry is None else registry
     key = (name or "").strip().lower()
@@ -81,7 +98,7 @@ def lookup(
             return admin
     return Administrator(
         name=name or "[Unknown Administrator]",
-        address_lines=["<<VERIFY: administrator not in registry -- research address>>"],
+        address_lines=[],
         cancellation_route=CancellationRoute.EITHER,
         notes="Administrator is not in the registry; verify the name, mailing "
         "address, and cancellation procedure before mailing.",

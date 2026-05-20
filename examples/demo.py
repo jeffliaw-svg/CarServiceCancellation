@@ -61,7 +61,7 @@ def build_sample_case() -> RefundCase:
         ),
         AddOnProduct(
             product_type=ProductType.GAP,
-            administrator_name="Fidelity Warranty Services",
+            administrator_name="JM&A Group",
             contract_number="GAP-553021",
             price=895.00,
             term_months=72,
