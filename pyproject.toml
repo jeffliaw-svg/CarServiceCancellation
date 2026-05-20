@@ -1,0 +1,9 @@
+[project]
+name = "refunds"
+version = "0.1.0"
+description = "Pro-rata refund request generator for cancelled vehicle F&I add-on products"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
