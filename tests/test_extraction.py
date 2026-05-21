@@ -284,16 +284,49 @@ def test_gemini_rejects_unsupported_extension():
         raise AssertionError("expected ValueError for an unsupported file type")
 
 
+def _restore_env(saved: dict) -> None:
+    for key, value in saved.items():
+        if value is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = value
+
+
 def test_build_default_ensemble_without_keys_is_none():
-    saved_anthropic = os.environ.pop("ANTHROPIC_API_KEY", None)
-    saved_gemini = os.environ.pop("GEMINI_API_KEY", None)
+    saved = {k: os.environ.get(k) for k in ("ANTHROPIC_API_KEY", "GEMINI_API_KEY")}
+    os.environ.pop("ANTHROPIC_API_KEY", None)
+    os.environ.pop("GEMINI_API_KEY", None)
     try:
         assert build_default_ensemble() is None
     finally:
-        if saved_anthropic:
-            os.environ["ANTHROPIC_API_KEY"] = saved_anthropic
-        if saved_gemini:
-            os.environ["GEMINI_API_KEY"] = saved_gemini
+        _restore_env(saved)
+
+
+def test_build_default_ensemble_two_vendors_has_three_readers():
+    saved = {k: os.environ.get(k) for k in ("ANTHROPIC_API_KEY", "GEMINI_API_KEY")}
+    os.environ["ANTHROPIC_API_KEY"] = "test-anthropic"
+    os.environ["GEMINI_API_KEY"] = "test-gemini"
+    try:
+        ensemble = build_default_ensemble()
+        assert ensemble is not None
+        names = [e.name for e in ensemble.extractors]
+        assert len(names) == 3
+        assert "rule-based parser" in names
+    finally:
+        _restore_env(saved)
+
+
+def test_build_default_ensemble_one_vendor_still_has_three_readers():
+    saved = {k: os.environ.get(k) for k in ("ANTHROPIC_API_KEY", "GEMINI_API_KEY")}
+    os.environ["ANTHROPIC_API_KEY"] = "test-anthropic"
+    os.environ.pop("GEMINI_API_KEY", None)
+    try:
+        ensemble = build_default_ensemble()
+        assert ensemble is not None
+        # Two prompt-varied passes of the one vendor + the rule-based parser.
+        assert len(ensemble.extractors) == 3
+    finally:
+        _restore_env(saved)
 
 
 def _run_standalone() -> int:

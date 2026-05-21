@@ -77,6 +77,12 @@ _RESOLVER_PROMPT = (
     "field."
 )
 
+_OCR_TRANSCRIBE_PROMPT = (
+    "Transcribe every line of text in this vehicle purchase document exactly "
+    "as printed, preserving the line and column layout. Output only the "
+    "transcription, with no commentary."
+)
+
 
 # ----------------------------------------------------------------------
 # data types
@@ -678,11 +684,27 @@ class EnsembleExtractor:
         return reconcile(path, extractions, self.resolver)
 
 
+def _ocr_from_model(model: object):
+    """Adapt a vision model into an OCR text source for the rule parser."""
+    if hasattr(model, "extract_text"):
+        return model  # an OcrAdapter is already callable
+    return lambda path: model.complete(path, _OCR_TRANSCRIBE_PROMPT)
+
+
 def build_default_ensemble() -> EnsembleExtractor | None:
     """Build an ensemble from whatever model API keys are configured.
 
-    Two vendors -> one extractor each (best decorrelation). One vendor ->
-    two passes of it with different prompts. No keys -> None.
+    The ensemble always has at least three independent readers:
+
+      - two structured LLM extractors -- one per vendor when both
+        Anthropic and Gemini keys are present (the strongest
+        decorrelation), otherwise two passes of the one vendor with
+        different prompts;
+      - the deterministic rule-based parser, which transcribes the
+        document and parses it with regular expressions. It never invents
+        a product, so it is a genuine cross-check on LLM hallucination.
+
+    No keys -> None.
     """
     models: list[object] = []
     if os.environ.get("ANTHROPIC_API_KEY"):
@@ -713,6 +735,12 @@ def build_default_ensemble() -> EnsembleExtractor | None:
                 only, name=f"{base} (reading B)", prompt=_EXTRACTION_PROMPT_ALT
             )
         )
+
+    extractors.append(
+        RegexDocumentExtractor(
+            ocr=_ocr_from_model(models[0]), name="rule-based parser"
+        )
+    )
     return EnsembleExtractor(
         extractors, resolver=LLMConflictResolver(models[0])
     )
