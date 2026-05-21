@@ -1,0 +1,31 @@
+# Render Blueprint for the RefundRoute API server.
+#
+# Deploy:  Render dashboard -> New -> Blueprint -> pick this repository.
+# Render reads this file and provisions the service below.
+#
+# Secrets and per-environment values are marked "sync: false" -- Render
+# will prompt for them in the dashboard; they are never stored in git.
+services:
+  - type: web
+    name: refundroute-api
+    runtime: python
+    plan: starter            # a paid instance is required for the disk below
+    branch: claude/car-service-refunds-pHlF0
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m server.app
+    healthCheckPath: /api/health
+    disk:
+      name: refundroute-data
+      mountPath: /var/data   # persistent storage for cases and generated files
+      sizeGB: 1
+    envVars:
+      - key: REFUNDS_DATA_DIR
+        value: /var/data
+      - key: REFUNDS_ALLOWED_ORIGIN
+        sync: false          # set to the Vercel URL after the front-end deploys
+      - key: REFUNDS_ACCESS_CODE
+        sync: false          # the closed-beta code you choose
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
