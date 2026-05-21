@@ -38,31 +38,37 @@ from .ocr import OcrDependencyError
 
 HIGH, MEDIUM, LOW = "high", "medium", "low"
 
+_PRODUCT_SHAPE = (
+    '{"product_type": string, "administrator": string, "contract_number": '
+    'string, "price": number, "term_months": number|null, "term_miles": '
+    'number|null, "cancellation_fee": number|null}'
+)
+
 _EXTRACTION_PROMPT = (
     "You are extracting the add-on products from a vehicle purchase document "
     "(a retail installment sales contract or buyer's order). Return ONLY a "
     "JSON object -- no prose, no code fences -- with exactly this shape:\n"
-    '{"vin": string|null, "purchase_date": "YYYY-MM-DD"|null, "products": '
-    '[{"product_type": string, "administrator": string, "contract_number": '
-    'string, "price": number, "term_months": number|null, "term_miles": '
-    "number|null}]}\n"
+    '{"vin": string|null, "purchase_date": "YYYY-MM-DD"|null, "products": ['
+    + _PRODUCT_SHAPE
+    + "]}\n"
     "Include every optional add-on / F&I product line: service contracts, "
     "GAP, tire & wheel, prepaid maintenance, appearance protection, key "
-    "replacement, theft protection, and so on. Copy figures exactly as "
-    "printed. Use null where a value is genuinely absent. Do not guess."
+    "replacement, theft protection, and so on. For cancellation_fee, give "
+    "the cancellation or administrative fee only if the document states "
+    "one. Copy figures exactly as printed. Use null where a value is "
+    "genuinely absent. Do not guess."
 )
 
 _EXTRACTION_PROMPT_ALT = (
     "Carefully read this car purchase contract. Identify every optional "
     "add-on or F&I product the buyer was charged for. For each product, "
     "record its name, the company that administers it, its contract or "
-    "agreement number, the dollar price, and the term in months and in "
-    "miles. Also record the vehicle VIN and the contract date. Reply with "
-    "only a JSON object of this exact form:\n"
-    '{"vin": string|null, "purchase_date": "YYYY-MM-DD"|null, "products": '
-    '[{"product_type": string, "administrator": string, "contract_number": '
-    'string, "price": number, "term_months": number|null, "term_miles": '
-    "number|null}]}\n"
+    "agreement number, the dollar price, the term in months and in miles, "
+    "and any stated cancellation fee. Also record the vehicle VIN and the "
+    "contract date. Reply with only a JSON object of this exact form:\n"
+    '{"vin": string|null, "purchase_date": "YYYY-MM-DD"|null, "products": ['
+    + _PRODUCT_SHAPE
+    + "]}\n"
     "Transcribe every figure exactly as it appears; use null when something "
     "is not stated."
 )
@@ -99,6 +105,7 @@ class ProductFields:
     price: float | None = None
     term_months: int | None = None
     term_miles: int | None = None
+    cancellation_fee: float | None = None
 
 
 @dataclass
@@ -180,11 +187,13 @@ _FIELD_SPECS = [
     ("price", _norm_price, lambda value: value),
     ("term_months", _norm_int, lambda value: value),
     ("term_miles", _norm_int, lambda value: value),
+    ("cancellation_fee", _norm_price, lambda value: value),
 ]
 
 # Fields routinely absent on a legitimate contract (a time-only product
-# has no mileage term). Their absence is treated as agreement, not a gap.
-_OPTIONAL_FIELDS = {"term_miles"}
+# has no mileage term; many contracts state no separate cancellation
+# fee). Their absence is treated as agreement, not a gap to review.
+_OPTIONAL_FIELDS = {"term_miles", "cancellation_fee"}
 
 
 def _parse_json_object(text: str) -> dict:
@@ -339,6 +348,7 @@ def _extraction_from_json(name: str, data: dict) -> DocumentExtraction:
                 price=_norm_price(item.get("price")),
                 term_months=_norm_int(item.get("term_months")),
                 term_miles=_norm_int(item.get("term_miles")),
+                cancellation_fee=_norm_price(item.get("cancellation_fee")),
             )
         )
     vin = data.get("vin")
@@ -634,6 +644,7 @@ def reconcile(
                 f"really is on your contract."
             )
 
+        fee = chosen.get("cancellation_fee")
         product = AddOnProduct(
             product_type=product_type,
             administrator_name=str(chosen.get("administrator") or ""),
@@ -641,6 +652,7 @@ def reconcile(
             price=float(chosen["price"]) if chosen.get("price") is not None else 0.0,
             term_months=chosen.get("term_months"),  # type: ignore[arg-type]
             term_miles=chosen.get("term_miles"),  # type: ignore[arg-type]
+            cancellation_fee=float(fee) if fee is not None else 0.0,
         )
         review = [name for name, level in confidence.items() if level == LOW]
         products.append(ReconciledProduct(product, confidence, review))

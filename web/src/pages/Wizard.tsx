@@ -450,6 +450,18 @@ function StepConfirm({ view, token, advance, guard, busy }: StepProps) {
         title="Confirm each service"
         lead="Here is what we read from your contract. Confirm the ones that are yours. Anything we flagged for review starts unanswered -- check it against your paperwork first."
       />
+      {view.rules_notes.length > 0 && (
+        <div className="mb-6 rounded-2xl border border-line bg-accent-soft px-5 py-4">
+          <p className="text-xs font-semibold uppercase tracking-widest text-accent-deep">
+            In your state
+          </p>
+          {view.rules_notes.map((note) => (
+            <p key={note.topic} className="mt-2 text-sm text-accent-deep">
+              <strong>{note.topic}:</strong> {note.rule}
+            </p>
+          ))}
+        </div>
+      )}
       <div className="space-y-4">
         {view.products.map((p, i) => {
           const decision = decisions[i];

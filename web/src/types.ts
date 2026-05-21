@@ -19,6 +19,13 @@ export interface Product {
   review_fields: string[];
 }
 
+export interface RuleNote {
+  topic: string;
+  rule: string;
+  source: string;
+  reviewed_on: string;
+}
+
 export interface GeneratedFile {
   name: string;
   kind: string;
@@ -56,6 +63,7 @@ export interface CaseView {
   total_estimated_refund: number;
   parse_warnings: string[];
   extraction_method: string;
+  rules_notes: RuleNote[];
   documents: DocumentFile[];
   generated: GeneratedFile[];
 }

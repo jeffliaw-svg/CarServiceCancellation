@@ -32,6 +32,7 @@ from refunds import (
     generate_letters_for_case,
     lookup,
     parse_contract_text,
+    state_notes,
     text_to_pdf,
     total_estimated_refund,
 )
@@ -70,6 +71,14 @@ def _safe_filename(name: str) -> str:
 
 def _money(value: float | None) -> str:
     return f"${value:,.2f}" if value is not None else "$0.00"
+
+
+def _state_from_address(address_lines: list[str]) -> str | None:
+    """Pull a 2-letter state code from a "City, ST ZIP" style address."""
+    match = re.search(
+        r"\b([A-Z]{2})\s+\d{5}(?:-\d{4})?\b", " ".join(address_lines)
+    )
+    return match.group(1) if match else None
 
 
 class RefundService:
@@ -583,10 +592,17 @@ class RefundService:
                 f"pro-rata refund of roughly {_money(estimate.net_refund)} -- "
                 f"the unused part of what you paid, based on {estimate.basis}."
             )
-            detail.append(
-                "This is an estimate, before any cancellation fee the provider "
-                "may deduct. The provider calculates the binding amount."
-            )
+            if product.cancellation_fee and product.cancellation_fee > 0:
+                detail.append(
+                    f"This already reflects the contract's "
+                    f"{_money(product.cancellation_fee)} cancellation fee. It "
+                    f"is an estimate; the provider sets the binding amount."
+                )
+            else:
+                detail.append(
+                    "This is an estimate, before any cancellation fee the "
+                    "provider may deduct. The provider sets the binding amount."
+                )
         else:
             detail.append(
                 "Because you sold the vehicle, you appear to be owed a pro-rata "
@@ -651,6 +667,9 @@ class RefundService:
             "total_estimated_refund": total_estimated_refund(case),
             "parse_warnings": meta.get("parse_warnings", []),
             "extraction_method": meta.get("extraction_method", ""),
+            "rules_notes": state_notes(
+                _state_from_address(case.seller.address_lines) or ""
+            ),
             "documents": [
                 {**doc, "download_url": prefix + doc["name"]}
                 for doc in meta.get("documents", [])

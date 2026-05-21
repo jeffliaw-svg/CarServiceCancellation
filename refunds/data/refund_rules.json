@@ -1,0 +1,48 @@
+{
+  "_comment": "Refund-rules reference for pro-rata estimates. HUMAN-MAINTAINED -- this file is deliberately NOT auto-refreshed. Statutory cancellation rules (for vehicle service contracts and especially GAP) change on a legislative cadence; review this file quarterly, or when a known change lands, with legal input. The binding refund is always computed by the product administrator under the actual contract and applicable law; these notes inform the estimate and the customer, they do not replace the administrator's calculation.",
+  "methods": {
+    "Vehicle Service Contract": {
+      "method": "Pro-rata on the unused term -- typically the greater of elapsed time or elapsed mileage -- minus any cancellation fee.",
+      "note": "The binding method and fee are set by the contract; many states cap the cancellation fee."
+    },
+    "GAP Waiver": {
+      "method": "Refund of the unearned portion of the GAP charge; the method may be pro-rata or another formula stated in the contract.",
+      "note": "Many states require a GAP refund on early loan payoff or vehicle sale, and may set the method and a deadline. Confirm the rule for the seller's state."
+    },
+    "Tire & Wheel Protection": {
+      "method": "Pro-rata refund of the unused term, minus any cancellation fee.",
+      "note": "The binding method and fee are set by the contract."
+    },
+    "Prepaid Maintenance Plan": {
+      "method": "Pro-rata on the unused term; the value of services already used may be deducted.",
+      "note": "Check whether the contract refunds unused time, unused services, or both."
+    },
+    "Paint & Fabric Appearance Protection": {
+      "method": "Often pro-rata on the unused term.",
+      "note": "Some appearance products are sold as a one-time application and may not be refundable -- check the contract."
+    },
+    "Key Replacement Coverage": {
+      "method": "Pro-rata refund of the unused term, minus any cancellation fee.",
+      "note": "The binding method and fee are set by the contract."
+    },
+    "Theft Protection / VIN Etch": {
+      "method": "Refundability varies; VIN etch is often a one-time product.",
+      "note": "Check the contract -- a one-time product may carry no pro-rata refund."
+    },
+    "Other Add-On Product": {
+      "method": "Refundability and method depend on the specific contract.",
+      "note": "Read the cancellation provisions of the contract."
+    }
+  },
+  "states": {
+    "_comment": "Per-state statutory overrides and notes. Each entry is {topic, rule, source, reviewed_on}. An empty reviewed_on means the entry has NOT been confirmed by a human and must not be relied on or shown to customers. Populate this section from primary sources (state statutes and insurance-department regulations) with legal input.",
+    "IL": [
+      {
+        "topic": "GAP refund on early termination",
+        "rule": "<<RESEARCH: confirm Illinois' GAP cancellation and refund rule, and cite the statute or regulation>>",
+        "source": "",
+        "reviewed_on": ""
+      }
+    ]
+  }
+}

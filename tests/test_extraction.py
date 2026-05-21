@@ -30,7 +30,9 @@ from refunds.extraction import (  # noqa: E402
 from refunds.ocr import OcrDependencyError  # noqa: E402
 
 
-def _vsc(price=2695.0, contract="VSC-1", admin="Zurich", months=72, miles=75000):
+def _vsc(
+    price=2695.0, contract="VSC-1", admin="Zurich", months=72, miles=75000, fee=50.0
+):
     return ProductFields(
         product_type="Vehicle Service Contract",
         administrator=admin,
@@ -38,6 +40,7 @@ def _vsc(price=2695.0, contract="VSC-1", admin="Zurich", months=72, miles=75000)
         price=price,
         term_months=months,
         term_miles=miles,
+        cancellation_fee=fee,
     )
 
 
@@ -204,6 +207,28 @@ def test_missing_optional_field_is_not_flagged():
     result = reconcile("d.pdf", [_doc("r1", [pf]), _doc("r2", [pf])],
                        NullConflictResolver())
     assert "term_miles" not in result.products[0].review_fields
+
+
+def test_cancellation_fee_is_reconciled_onto_the_product():
+    pf = ProductFields(
+        product_type="Vehicle Service Contract", administrator="Zurich",
+        contract_number="VSC-1", price=2000.0, term_months=72,
+        cancellation_fee=75.0,
+    )
+    result = reconcile("d.pdf", [_doc("r1", [pf]), _doc("r2", [pf])],
+                       NullConflictResolver())
+    assert result.products[0].product.cancellation_fee == 75.0
+
+
+def test_missing_cancellation_fee_is_not_flagged():
+    pf = ProductFields(
+        product_type="GAP Waiver", administrator="Zurich",
+        contract_number="G1", price=900.0, term_months=72,
+    )
+    result = reconcile("d.pdf", [_doc("r1", [pf]), _doc("r2", [pf])],
+                       NullConflictResolver())
+    assert "cancellation_fee" not in result.products[0].review_fields
+    assert result.products[0].product.cancellation_fee == 0.0
 
 
 def test_vin_is_voted_across_readers():

@@ -63,6 +63,12 @@ from .prorata import (
     estimate_refund,
     total_estimated_refund,
 )
+from .refund_rules import (
+    DEFAULT_RULES,
+    load_rules,
+    method_note,
+    state_notes,
+)
 
 __all__ = [
     "AddOnProduct",
@@ -77,6 +83,10 @@ __all__ = [
     "estimate_refund",
     "estimate_case",
     "total_estimated_refund",
+    "load_rules",
+    "method_note",
+    "state_notes",
+    "DEFAULT_RULES",
     "Letter",
     "generate_letter",
     "generate_letters_for_case",
