@@ -19,8 +19,8 @@ const STEPS = [
   },
   {
     n: "03",
-    title: "Confirm and send",
-    body: "We show you what you are owed. Confirm each service and we draft the certified-mail letters.",
+    title: "Confirm and prepare",
+    body: "We show your estimated refunds. Confirm each service, and we draft the letters and authorization for you to print, sign, and mail.",
   },
 ];
 
@@ -41,12 +41,12 @@ const FAQ = [
     a: "We read it off your retail installment contract -- the one document that itemizes every add-on product, its price, and its term. You upload it; we do the rest.",
   },
   {
-    q: "How much can I actually get back?",
-    a: "It depends on how much of each contract was unused when you sold the car. A multi-year service contract cancelled early can refund several hundred to a couple thousand dollars.",
-  },
-  {
     q: "Do I still have to mail things myself?",
     a: "Yes. We generate print-ready letters, a signed authorization, and a step-by-step checklist. You print, sign, enclose your bill of sale, and send them by certified mail. That paper trail is what protects you.",
+  },
+  {
+    q: "How much can I actually get back?",
+    a: "It depends on how much of each contract was unused when you sold the car. A multi-year service contract cancelled early can refund several hundred to a couple thousand dollars. The figures we show are estimates -- each administrator calculates the binding amount.",
   },
   {
     q: "Are you a law firm?",
@@ -108,7 +108,7 @@ function EstimateCard() {
       className="relative w-full max-w-sm"
     >
       <div className="absolute -right-5 -top-5 rounded-full bg-accent px-4 py-2 text-xs font-semibold text-white shadow-lg">
-        Refund found
+        Sample estimate
       </div>
       <div className="rounded-3xl border border-line bg-surface p-7 shadow-[0_30px_60px_-30px_rgba(20,17,15,0.35)]">
         <p className="text-xs font-semibold uppercase tracking-widest text-muted">
@@ -124,13 +124,16 @@ function EstimateCard() {
         </div>
         <div className="mt-5 border-t border-line pt-5">
           <div className="flex items-end justify-between">
-            <span className="text-sm font-semibold">Total you are owed</span>
+            <span className="text-sm font-semibold">Estimated total</span>
             <span className="font-display text-3xl text-accent">$2,367</span>
           </div>
         </div>
         <div className="mt-6 rounded-xl bg-accent-soft px-4 py-3 text-xs text-accent-deep">
-          3 certified letters drafted &middot; ready to print and mail
+          3 letters drafted &middot; you print, sign, and mail them
         </div>
+        <p className="mt-3 text-center text-[11px] text-muted">
+          Illustrative example. Your amounts depend on your contract.
+        </p>
       </div>
     </motion.div>
   );
@@ -203,7 +206,7 @@ export default function Landing() {
               transition={{ duration: 0.7, delay: 0.3 }}
               className="mt-6 text-sm text-muted"
             >
-              One short form &middot; one document &middot; minutes, not hours
+              One short form &middot; one document &middot; we prepare the paperwork
             </motion.p>
           </div>
 
@@ -312,11 +315,15 @@ export default function Landing() {
                 Covers the full workup for one vehicle, however many add-on
                 products it carried.
               </p>
+              <p className="mt-3 text-sm text-muted">
+                RefundRoute prepares your claim; you print, sign, and mail it.
+                Refund figures are estimates, not guaranteed amounts.
+              </p>
               <ul className="mt-7 space-y-3 text-sm">
                 {[
                   "Line-by-line reading of your contract",
                   "A pro-rata refund estimate for every product",
-                  "Certified-mail letters, addressed and ready to print",
+                  "Certified-mail letters, drafted and ready to print",
                   "A signed authorization and a mailing checklist",
                   "Ready-to-send email drafts where accepted",
                 ].map((item) => (
