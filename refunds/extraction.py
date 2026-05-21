@@ -1,0 +1,642 @@
+"""Redundant, cross-checked document extraction.
+
+A single OCR/LLM pass over a messy F&I contract makes mistakes. This
+module runs several *independent* extractors over the same document and
+reconciles them field by field:
+
+  - a field where every extractor agrees is accepted with high
+    confidence;
+  - a field where a strict majority agrees is accepted as medium;
+  - a field they genuinely dispute goes to a `ConflictResolver` -- a
+    separate model call that sees the document and the rival values --
+    and, if even that is unsure, the field is flagged for the customer.
+
+Independence is what makes this work. Two calls to the *same* model at
+low temperature tend to repeat each other's systematic mistakes, so they
+agree on the wrong answer. Different vendors (Claude, Gemini) have
+different vision stacks and fail differently, so a real error usually
+surfaces as a disagreement -- which is exactly what triggers review.
+When only one vendor is available the ensemble still decorrelates as far
+as it can, by running that model twice with different prompts.
+"""
+
+from __future__ import annotations
+
+import abc
+import base64
+import json
+import os
+import re
+import urllib.error
+import urllib.request
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
+
+from .contract_parser import classify_product_type, parse_contract_file
+from .models import AddOnProduct, ProductType
+from .ocr import OcrDependencyError
+
+HIGH, MEDIUM, LOW = "high", "medium", "low"
+
+_EXTRACTION_PROMPT = (
+    "You are extracting the add-on products from a vehicle purchase document "
+    "(a retail installment sales contract or buyer's order). Return ONLY a "
+    "JSON object -- no prose, no code fences -- with exactly this shape:\n"
+    '{"vin": string|null, "purchase_date": "YYYY-MM-DD"|null, "products": '
+    '[{"product_type": string, "administrator": string, "contract_number": '
+    'string, "price": number, "term_months": number|null, "term_miles": '
+    "number|null}]}\n"
+    "Include every optional add-on / F&I product line: service contracts, "
+    "GAP, tire & wheel, prepaid maintenance, appearance protection, key "
+    "replacement, theft protection, and so on. Copy figures exactly as "
+    "printed. Use null where a value is genuinely absent. Do not guess."
+)
+
+_EXTRACTION_PROMPT_ALT = (
+    "Carefully read this car purchase contract. Identify every optional "
+    "add-on or F&I product the buyer was charged for. For each product, "
+    "record its name, the company that administers it, its contract or "
+    "agreement number, the dollar price, and the term in months and in "
+    "miles. Also record the vehicle VIN and the contract date. Reply with "
+    "only a JSON object of this exact form:\n"
+    '{"vin": string|null, "purchase_date": "YYYY-MM-DD"|null, "products": '
+    '[{"product_type": string, "administrator": string, "contract_number": '
+    'string, "price": number, "term_months": number|null, "term_miles": '
+    "number|null}]}\n"
+    "Transcribe every figure exactly as it appears; use null when something "
+    "is not stated."
+)
+
+_RESOLVER_PROMPT = (
+    "Look closely at this vehicle purchase document. For the \"{product}\" "
+    "add-on product, several automated readers disagree on the field "
+    "\"{field}\". The candidate values are: {candidates}. Decide the correct "
+    "value by reading the document carefully. Respond with ONLY a JSON "
+    'object: {{"value": <the correct value>, "confident": <true or false>}}. '
+    "Set confident to false if the document is genuinely illegible for this "
+    "field."
+)
+
+
+# ----------------------------------------------------------------------
+# data types
+# ----------------------------------------------------------------------
+
+
+@dataclass
+class ProductFields:
+    """One extractor's reading of a single add-on product (loose/raw)."""
+
+    product_type: str = ""
+    administrator: str = ""
+    contract_number: str = ""
+    price: float | None = None
+    term_months: int | None = None
+    term_miles: int | None = None
+
+
+@dataclass
+class DocumentExtraction:
+    """One extractor's full reading of a document (or its failure)."""
+
+    source: str
+    products: list[ProductFields] = field(default_factory=list)
+    vin: str | None = None
+    purchase_date: str | None = None
+    error: str | None = None
+
+
+@dataclass
+class ReconciledProduct:
+    product: AddOnProduct
+    confidence: dict[str, str]      # field name -> HIGH | MEDIUM | LOW
+    review_fields: list[str]        # fields the customer should double-check
+
+
+@dataclass
+class EnsembleResult:
+    products: list[ReconciledProduct]
+    vin: str | None
+    purchase_date: str | None
+    extractor_names: list[str]
+    warnings: list[str]
+
+
+@dataclass
+class ResolverVerdict:
+    value: object
+    confident: bool
+
+
+# ----------------------------------------------------------------------
+# normalisation helpers
+# ----------------------------------------------------------------------
+
+
+def _norm_text(raw: object) -> str | None:
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    return text or None
+
+
+def _norm_contract(raw: object) -> str | None:
+    text = _norm_text(raw)
+    return text.upper() if text else None
+
+
+def _norm_price(raw: object) -> float | None:
+    if raw is None or isinstance(raw, bool):
+        return None
+    if isinstance(raw, (int, float)):
+        return round(float(raw), 2)
+    text = str(raw).strip().replace("$", "").replace(",", "")
+    if not text:
+        return None
+    try:
+        return round(float(text), 2)
+    except ValueError:
+        return None
+
+
+def _norm_int(raw: object) -> int | None:
+    if raw is None or isinstance(raw, bool):
+        return None
+    if isinstance(raw, (int, float)):
+        return int(raw)
+    match = re.search(r"\d+", str(raw).replace(",", ""))
+    return int(match.group()) if match else None
+
+
+_FIELD_SPECS = [
+    ("administrator", _norm_text, lambda value: value.lower()),
+    ("contract_number", _norm_contract, lambda value: value),
+    ("price", _norm_price, lambda value: value),
+    ("term_months", _norm_int, lambda value: value),
+    ("term_miles", _norm_int, lambda value: value),
+]
+
+
+def _parse_json_object(text: str) -> dict:
+    start = text.find("{")
+    end = text.rfind("}")
+    if start == -1 or end == -1 or end < start:
+        raise ValueError("model output contained no JSON object")
+    return json.loads(text[start : end + 1])
+
+
+def _vote_scalar(values: list[object]) -> str | None:
+    present = [v for v in (_norm_text(value) for value in values) if v]
+    if not present:
+        return None
+    counts: dict[str, int] = {}
+    for value in present:
+        counts[value] = counts.get(value, 0) + 1
+    return max(counts, key=lambda key: counts[key])
+
+
+# ----------------------------------------------------------------------
+# vision models (used by the LLM extractors and the resolver)
+# ----------------------------------------------------------------------
+
+_GEMINI_URL = (
+    "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+)
+_GEMINI_MEDIA = {
+    ".pdf": "application/pdf",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+}
+
+
+class GeminiVisionModel:
+    """Google Gemini vision model -- a second, independent vendor.
+
+    Stdlib-only (the Generative Language API is a plain HTTPS request).
+    Needs a `GEMINI_API_KEY`. The model id is configurable; verify the
+    current id for your account if the default is rejected.
+    """
+
+    name = "gemini"
+
+    def __init__(
+        self,
+        *,
+        api_key: str | None = None,
+        model: str = "gemini-2.5-flash",
+        timeout: float = 120.0,
+    ) -> None:
+        self.api_key = api_key if api_key is not None else os.environ.get(
+            "GEMINI_API_KEY", ""
+        )
+        self.model = model
+        self.timeout = timeout
+
+    def _media_type(self, path: str) -> str:
+        lower = path.lower()
+        for extension, media_type in _GEMINI_MEDIA.items():
+            if lower.endswith(extension):
+                return media_type
+        raise ValueError(
+            f"GeminiVisionModel cannot handle {path!r}; expected a PDF or a "
+            f"PNG/JPEG/WebP image."
+        )
+
+    def _build_payload(self, path: str, prompt: str) -> dict:
+        media_type = self._media_type(path)
+        with open(path, "rb") as handle:
+            data = base64.b64encode(handle.read()).decode("ascii")
+        return {
+            "contents": [
+                {
+                    "parts": [
+                        {"inline_data": {"mime_type": media_type, "data": data}},
+                        {"text": prompt},
+                    ]
+                }
+            ]
+        }
+
+    def _post(self, payload: dict) -> dict:
+        request = urllib.request.Request(
+            _GEMINI_URL.format(model=self.model),
+            data=json.dumps(payload).encode("utf-8"),
+            method="POST",
+            headers={
+                "content-type": "application/json",
+                "x-goog-api-key": self.api_key,
+            },
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                return json.loads(response.read())
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            raise OcrDependencyError(
+                f"Gemini API request failed ({exc.code}): {detail}"
+            ) from exc
+        except urllib.error.URLError as exc:
+            raise OcrDependencyError(
+                f"Could not reach the Gemini API: {exc.reason}"
+            ) from exc
+
+    def complete(self, path: str, prompt: str) -> str:
+        if not self.api_key:
+            raise OcrDependencyError(
+                "GeminiVisionModel needs an API key. Set the GEMINI_API_KEY "
+                "environment variable, or pass api_key=..."
+            )
+        response = self._post(self._build_payload(path, prompt))
+        candidates = response.get("candidates") or []
+        if not candidates:
+            raise OcrDependencyError("The Gemini API returned no candidates.")
+        parts = candidates[0].get("content", {}).get("parts", [])
+        text = "\n".join(
+            part.get("text", "") for part in parts if "text" in part
+        ).strip()
+        if not text:
+            raise OcrDependencyError("The Gemini API returned no text.")
+        return text
+
+
+# ----------------------------------------------------------------------
+# extractors
+# ----------------------------------------------------------------------
+
+
+class DocumentExtractor(abc.ABC):
+    """An independent reader that turns a document into structured fields."""
+
+    name: str
+
+    @abc.abstractmethod
+    def extract(self, path: str) -> DocumentExtraction:
+        """Read `path`; never raise -- failures return error-tagged results."""
+
+
+def _extraction_from_json(name: str, data: dict) -> DocumentExtraction:
+    products: list[ProductFields] = []
+    for item in data.get("products") or []:
+        if not isinstance(item, dict):
+            continue
+        products.append(
+            ProductFields(
+                product_type=str(item.get("product_type") or ""),
+                administrator=str(item.get("administrator") or ""),
+                contract_number=str(item.get("contract_number") or ""),
+                price=_norm_price(item.get("price")),
+                term_months=_norm_int(item.get("term_months")),
+                term_miles=_norm_int(item.get("term_miles")),
+            )
+        )
+    vin = data.get("vin")
+    purchase_date = data.get("purchase_date")
+    return DocumentExtraction(
+        source=name,
+        products=products,
+        vin=str(vin) if vin else None,
+        purchase_date=str(purchase_date) if purchase_date else None,
+    )
+
+
+class LLMDocumentExtractor(DocumentExtractor):
+    """Structured extraction via a vision model that returns JSON."""
+
+    def __init__(
+        self,
+        model: object,
+        *,
+        name: str | None = None,
+        prompt: str = _EXTRACTION_PROMPT,
+    ) -> None:
+        self.model = model
+        self.name = name or getattr(model, "name", "llm")
+        self.prompt = prompt
+
+    def extract(self, path: str) -> DocumentExtraction:
+        try:
+            raw = self.model.complete(path, self.prompt)  # type: ignore[attr-defined]
+            return _extraction_from_json(self.name, _parse_json_object(raw))
+        except Exception as exc:  # noqa: BLE001
+            return DocumentExtraction(source=self.name, error=str(exc))
+
+
+class RegexDocumentExtractor(DocumentExtractor):
+    """The rule-based parser as an ensemble member.
+
+    A genuinely different mechanism from the LLMs -- it never
+    hallucinates, it only garbles -- so it adds real error diversity.
+    """
+
+    def __init__(
+        self, *, ocr: object | None = None, name: str = "rule-based parser"
+    ) -> None:
+        self.ocr = ocr
+        self.name = name
+
+    def extract(self, path: str) -> DocumentExtraction:
+        try:
+            parsed = parse_contract_file(path, ocr=self.ocr)  # type: ignore[arg-type]
+            products = [
+                ProductFields(
+                    product_type=product.product_type.value,
+                    administrator=product.administrator_name,
+                    contract_number=product.contract_number,
+                    price=product.price,
+                    term_months=product.term_months,
+                    term_miles=product.term_miles,
+                )
+                for product in parsed.products
+            ]
+            return DocumentExtraction(
+                source=self.name,
+                products=products,
+                vin=parsed.detected_vin,
+                purchase_date=(
+                    parsed.detected_purchase_date.isoformat()
+                    if parsed.detected_purchase_date
+                    else None
+                ),
+            )
+        except Exception as exc:  # noqa: BLE001
+            return DocumentExtraction(source=self.name, error=str(exc))
+
+
+# ----------------------------------------------------------------------
+# conflict resolution
+# ----------------------------------------------------------------------
+
+
+class ConflictResolver(abc.ABC):
+    @abc.abstractmethod
+    def resolve(
+        self, path: str, product_type: str, field_name: str, candidates: list
+    ) -> ResolverVerdict:
+        """Adjudicate a single disputed field."""
+
+
+class NullConflictResolver(ConflictResolver):
+    """Fallback resolver: never resolves -- every conflict is flagged."""
+
+    def resolve(
+        self, path: str, product_type: str, field_name: str, candidates: list
+    ) -> ResolverVerdict:
+        return ResolverVerdict(value=candidates[0], confident=False)
+
+
+class LLMConflictResolver(ConflictResolver):
+    """Resolves a disputed field with a fresh, focused vision-model call."""
+
+    def __init__(self, model: object) -> None:
+        self.model = model
+
+    def resolve(
+        self, path: str, product_type: str, field_name: str, candidates: list
+    ) -> ResolverVerdict:
+        prompt = _RESOLVER_PROMPT.format(
+            product=product_type,
+            field=field_name,
+            candidates=", ".join(repr(c) for c in candidates),
+        )
+        try:
+            raw = self.model.complete(path, prompt)  # type: ignore[attr-defined]
+            data = _parse_json_object(raw)
+            return ResolverVerdict(
+                value=data.get("value"), confident=bool(data.get("confident"))
+            )
+        except Exception:  # noqa: BLE001
+            return ResolverVerdict(value=candidates[0], confident=False)
+
+
+# ----------------------------------------------------------------------
+# reconciliation
+# ----------------------------------------------------------------------
+
+
+def _reconcile_field(
+    path: str,
+    product_type: ProductType,
+    field_name: str,
+    normalizer,
+    keyfn,
+    members: list[tuple[str, ProductFields]],
+    resolver: ConflictResolver,
+) -> tuple[object, str]:
+    """Return (chosen value, confidence) for one field of one product."""
+    values = []
+    for _source, fields in members:
+        normalized = normalizer(getattr(fields, field_name))
+        if normalized is not None and normalized != "":
+            values.append(normalized)
+
+    if not values:
+        # No reader reported this field -- treat it as unanimously absent
+        # rather than flagging an empty field for the customer to review.
+        return None, HIGH
+
+    groups: dict[object, list] = {}
+    for value in values:
+        groups.setdefault(keyfn(value), []).append(value)
+    winner_key = max(groups, key=lambda key: len(groups[key]))
+    winner = groups[winner_key][0]
+    present = len(values)
+    agree = len(groups[winner_key])
+
+    if present == 1:
+        return winner, LOW
+    if agree == present:
+        return winner, HIGH
+    if agree * 2 > present:
+        return winner, MEDIUM
+
+    # Genuine disagreement -- send the distinct candidates to the resolver.
+    candidates = [group[0] for group in groups.values()]
+    verdict = resolver.resolve(path, product_type.value, field_name, candidates)
+    resolved = normalizer(verdict.value)
+    if resolved is None or resolved == "":
+        resolved = winner
+    return resolved, (MEDIUM if verdict.confident else LOW)
+
+
+def reconcile(
+    path: str, extractions: list[DocumentExtraction], resolver: ConflictResolver
+) -> EnsembleResult:
+    """Combine independent extractions into one cross-checked result."""
+    succeeded = [e for e in extractions if e.error is None]
+    failed = [e for e in extractions if e.error is not None]
+    warnings = [
+        f"{e.source} could not read the document: {e.error}" for e in failed
+    ]
+    names = [e.source for e in succeeded]
+
+    if not succeeded:
+        return EnsembleResult(
+            [], None, None, names,
+            warnings + ["No reader could process this document."],
+        )
+    if len(succeeded) == 1:
+        warnings.append(
+            f"Only one reader ({succeeded[0].source}) processed this "
+            f"document, so nothing could be cross-checked -- please review "
+            f"every field carefully."
+        )
+
+    clusters: dict[ProductType, list[tuple[str, ProductFields]]] = {}
+    for extraction in succeeded:
+        for fields in extraction.products:
+            product_type = classify_product_type(fields.product_type or "")
+            clusters.setdefault(product_type, []).append(
+                (extraction.source, fields)
+            )
+
+    total = len(succeeded)
+    products: list[ReconciledProduct] = []
+    for product_type, members in clusters.items():
+        chosen: dict[str, object] = {}
+        confidence: dict[str, str] = {}
+        for field_name, normalizer, keyfn in _FIELD_SPECS:
+            value, level = _reconcile_field(
+                path, product_type, field_name, normalizer, keyfn,
+                members, resolver,
+            )
+            chosen[field_name] = value
+            confidence[field_name] = level
+
+        reporting_sources = {source for source, _ in members}
+        if total >= 2 and len(reporting_sources) * 2 <= total:
+            warnings.append(
+                f"The {product_type.value} was reported by only "
+                f"{len(reporting_sources)} of {total} readers -- confirm it "
+                f"really is on your contract."
+            )
+
+        product = AddOnProduct(
+            product_type=product_type,
+            administrator_name=str(chosen.get("administrator") or ""),
+            contract_number=str(chosen.get("contract_number") or ""),
+            price=float(chosen["price"]) if chosen.get("price") is not None else 0.0,
+            term_months=chosen.get("term_months"),  # type: ignore[arg-type]
+            term_miles=chosen.get("term_miles"),  # type: ignore[arg-type]
+        )
+        review = [name for name, level in confidence.items() if level == LOW]
+        products.append(ReconciledProduct(product, confidence, review))
+
+    return EnsembleResult(
+        products=products,
+        vin=_vote_scalar([e.vin for e in succeeded]),
+        purchase_date=_vote_scalar([e.purchase_date for e in succeeded]),
+        extractor_names=names,
+        warnings=warnings,
+    )
+
+
+# ----------------------------------------------------------------------
+# the ensemble
+# ----------------------------------------------------------------------
+
+
+class EnsembleExtractor:
+    """Runs independent extractors in parallel and reconciles them."""
+
+    def __init__(
+        self,
+        extractors: list[DocumentExtractor],
+        *,
+        resolver: ConflictResolver | None = None,
+        max_workers: int = 4,
+    ) -> None:
+        if not extractors:
+            raise ValueError("EnsembleExtractor needs at least one extractor.")
+        self.extractors = list(extractors)
+        self.resolver = resolver or NullConflictResolver()
+        self.max_workers = max_workers
+
+    def extract(self, path: str) -> EnsembleResult:
+        workers = min(self.max_workers, len(self.extractors))
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            extractions = list(
+                pool.map(lambda extractor: extractor.extract(path), self.extractors)
+            )
+        return reconcile(path, extractions, self.resolver)
+
+
+def build_default_ensemble() -> EnsembleExtractor | None:
+    """Build an ensemble from whatever model API keys are configured.
+
+    Two vendors -> one extractor each (best decorrelation). One vendor ->
+    two passes of it with different prompts. No keys -> None.
+    """
+    models: list[object] = []
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        from .ocr import AnthropicVisionOcr
+
+        models.append(AnthropicVisionOcr())
+    if os.environ.get("GEMINI_API_KEY"):
+        models.append(GeminiVisionModel())
+    if not models:
+        return None
+
+    extractors: list[DocumentExtractor] = []
+    if len(models) >= 2:
+        for model in models:
+            extractors.append(
+                LLMDocumentExtractor(model, name=getattr(model, "name", "llm"))
+            )
+    else:
+        only = models[0]
+        base = getattr(only, "name", "llm")
+        extractors.append(
+            LLMDocumentExtractor(
+                only, name=f"{base} (reading A)", prompt=_EXTRACTION_PROMPT
+            )
+        )
+        extractors.append(
+            LLMDocumentExtractor(
+                only, name=f"{base} (reading B)", prompt=_EXTRACTION_PROMPT_ALT
+            )
+        )
+    return EnsembleExtractor(
+        extractors, resolver=LLMConflictResolver(models[0])
+    )

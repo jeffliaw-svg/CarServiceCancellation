@@ -12,6 +12,16 @@ const STEP_LABELS = [
   "Your letters",
 ];
 
+const FIELD_LABEL: Record<string, string> = {
+  price: "the price",
+  contract_number: "the contract number",
+  administrator: "the administrator",
+  term_months: "the term in months",
+  term_miles: "the term in miles",
+};
+
+const fieldLabel = (name: string) => FIELD_LABEL[name] ?? name;
+
 type Guard = <T>(fn: () => Promise<T>) => Promise<T | undefined>;
 
 interface StepProps {
@@ -361,6 +371,11 @@ function StepDocuments({ view, setView, advance, guard, busy }: StepProps) {
           <div className="rounded-xl bg-accent-soft px-4 py-3 text-sm text-accent-deep">
             Found <strong>{products.length}</strong> add-on{" "}
             {products.length === 1 ? "product" : "products"} on your contract.
+            {view.extraction_method && (
+              <span className="block text-xs text-accent-deep/70">
+                {view.extraction_method}
+              </span>
+            )}
           </div>
         )}
 
@@ -440,6 +455,15 @@ function StepConfirm({ view, advance, guard, busy }: StepProps) {
                   </p>
                 </div>
               </div>
+              {p.review_fields.length > 0 && (
+                <div className="mt-4 rounded-xl bg-amber-50 px-4 py-3 text-xs text-amber-800">
+                  Our document readers didn&rsquo;t fully agree on{" "}
+                  <strong>{p.review_fields.map(fieldLabel).join(", ")}</strong>{" "}
+                  for this product. Please double-check{" "}
+                  {p.review_fields.length === 1 ? "it" : "them"} against your
+                  paperwork before sending.
+                </div>
+              )}
               <div className="mt-5 flex gap-2">
                 <button
                   className={`btn !py-2 !text-xs ${

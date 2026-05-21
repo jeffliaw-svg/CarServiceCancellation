@@ -136,7 +136,13 @@ class AnthropicVisionOcr(OcrAdapter):
     The Anthropic API is a plain HTTPS request, so this needs no SDK --
     only an API key (the `ANTHROPIC_API_KEY` environment variable, or the
     `api_key` argument).
+
+    Beyond `extract_text`, the `complete(path, prompt)` method runs an
+    arbitrary vision prompt, which lets this double as a vision model for
+    the structured-extraction ensemble in `refunds.extraction`.
     """
+
+    name = "claude"
 
     def __init__(
         self,
@@ -179,7 +185,7 @@ class AnthropicVisionOcr(OcrAdapter):
             },
         }
 
-    def _build_payload(self, path: str) -> dict:
+    def _build_payload(self, path: str, prompt: str) -> dict:
         return {
             "model": self.model,
             "max_tokens": self.max_tokens,
@@ -188,7 +194,7 @@ class AnthropicVisionOcr(OcrAdapter):
                     "role": "user",
                     "content": [
                         self._source_block(path),
-                        {"type": "text", "text": _TRANSCRIBE_PROMPT},
+                        {"type": "text", "text": prompt},
                     ],
                 }
             ],
@@ -218,13 +224,14 @@ class AnthropicVisionOcr(OcrAdapter):
                 f"Could not reach the Anthropic API: {exc.reason}"
             ) from exc
 
-    def extract_text(self, path: str) -> str:
+    def complete(self, path: str, prompt: str) -> str:
+        """Run `prompt` against the document at `path`; return the reply text."""
         if not self.api_key:
             raise OcrDependencyError(
                 "AnthropicVisionOcr needs an API key. Set the "
                 "ANTHROPIC_API_KEY environment variable, or pass api_key=..."
             )
-        payload = self._build_payload(path)  # also validates the file type
+        payload = self._build_payload(path, prompt)  # also validates the file
         response = self._post(payload)
         text = "\n".join(
             block.get("text", "")
@@ -236,6 +243,9 @@ class AnthropicVisionOcr(OcrAdapter):
                 "The Anthropic API returned no text for this document."
             )
         return text
+
+    def extract_text(self, path: str) -> str:
+        return self.complete(path, _TRANSCRIBE_PROMPT)
 
 
 _ADAPTERS: dict[str, type[OcrAdapter]] = {

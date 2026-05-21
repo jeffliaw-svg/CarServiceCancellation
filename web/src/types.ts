@@ -15,6 +15,7 @@ export interface Product {
   term_miles: number | null;
   estimate: Estimate;
   question: string;
+  review_fields: string[];
 }
 
 export interface GeneratedFile {
@@ -50,6 +51,7 @@ export interface CaseView {
   products: Product[];
   total_estimated_refund: number;
   parse_warnings: string[];
+  extraction_method: string;
   documents: DocumentFile[];
   generated: GeneratedFile[];
 }

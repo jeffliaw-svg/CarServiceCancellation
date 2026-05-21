@@ -130,8 +130,12 @@ def test_anthropic_builds_pdf_and_image_blocks():
             handle.write(b"%PDF-1.4 fake")
         with open(png_path, "wb") as handle:
             handle.write(b"\x89PNG fake")
-        pdf_block = ocr._build_payload(pdf_path)["messages"][0]["content"][0]
-        png_block = ocr._build_payload(png_path)["messages"][0]["content"][0]
+        pdf_block = ocr._build_payload(pdf_path, "read")["messages"][0][
+            "content"
+        ][0]
+        png_block = ocr._build_payload(png_path, "read")["messages"][0][
+            "content"
+        ][0]
     assert pdf_block["type"] == "document"
     assert pdf_block["source"]["media_type"] == "application/pdf"
     assert png_block["type"] == "image"

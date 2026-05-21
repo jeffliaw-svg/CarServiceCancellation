@@ -143,6 +143,11 @@ def _match_product_type(line: str) -> ProductType | None:
     return None
 
 
+def classify_product_type(text: str) -> ProductType:
+    """Map a free-text product description to a canonical ProductType."""
+    return _match_product_type(text) or ProductType.OTHER
+
+
 def _match_administrator(text: str) -> str:
     lowered = text.lower()
     for alias, name in _ADMIN_ALIASES.items():

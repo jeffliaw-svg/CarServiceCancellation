@@ -144,7 +144,48 @@ def test_pdf_contract_without_ocr_returns_a_warning():
     )
     view = service.get_case(case_id)
     assert view["products"] == []
-    assert any("OCR" in w for w in view["parse_warnings"])
+    assert any("not configured" in w for w in view["parse_warnings"])
+
+
+def test_pdf_contract_uses_the_ensemble_when_configured():
+    from refunds.extraction import (
+        DocumentExtraction,
+        DocumentExtractor,
+        EnsembleExtractor,
+        ProductFields,
+    )
+
+    class _StubExtractor(DocumentExtractor):
+        def __init__(self, name):
+            self.name = name
+
+        def extract(self, path):
+            return DocumentExtraction(
+                source=self.name,
+                products=[
+                    ProductFields(
+                        product_type="Vehicle Service Contract",
+                        administrator="Zurich",
+                        contract_number="VSC-1",
+                        price=2695.0,
+                        term_months=72,
+                        term_miles=75000,
+                    )
+                ],
+                purchase_date="2023-03-15",
+            )
+
+    ensemble = EnsembleExtractor([_StubExtractor("a"), _StubExtractor("b")])
+    service = RefundService(tempfile.mkdtemp(), ensemble=ensemble)
+    case_id = service.create_case(_INTAKE)["case_id"]
+    service.add_document(
+        case_id, filename="scan.pdf", data=b"%PDF-1.4 fake", kind="contract"
+    )
+    view = service.get_case(case_id)
+    assert len(view["products"]) == 1
+    assert "cross-checked" in view["extraction_method"]
+    # Both readers agreed on every field, so nothing is flagged for review.
+    assert view["products"][0]["review_fields"] == []
 
 
 def test_get_file_rejects_unsafe_names():

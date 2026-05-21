@@ -64,6 +64,7 @@ class RefundService:
         service_name: str = "RefundRoute",
         service_contact: str = "support@refundroute.example",
         ocr: object | None = None,
+        ensemble: object | None = None,
     ) -> None:
         self.data_dir = data_dir
         self.cases = CaseStore(os.path.join(data_dir, "cases"))
@@ -71,13 +72,16 @@ class RefundService:
         os.makedirs(self.files_root, exist_ok=True)
         self.service_name = service_name
         self.service_contact = service_contact
-        # Document OCR for scanned (non-text) contracts. Defaults to the
-        # Claude vision backend when an Anthropic API key is configured.
+        # Reading scanned (non-text) contracts. A redundant, cross-checked
+        # ensemble is preferred; `ocr` is the single-reader fallback. With
+        # neither supplied, an ensemble is built from any configured model
+        # API keys (ANTHROPIC_API_KEY / GEMINI_API_KEY).
         self.ocr = ocr
-        if self.ocr is None and os.environ.get("ANTHROPIC_API_KEY"):
-            from refunds import get_ocr_adapter
+        self.ensemble = ensemble
+        if self.ocr is None and self.ensemble is None:
+            from refunds import build_default_ensemble
 
-            self.ocr = get_ocr_adapter("anthropic")
+            self.ensemble = build_default_ensemble()
 
     # -- file storage -----------------------------------------------------
 
@@ -176,8 +180,10 @@ class RefundService:
 
         if kind == "contract":
             stored_path = os.path.join(self._case_dir(case_id), stored_name)
-            warnings = self._ingest_contract(case, stored_path, filename, data)
-            meta["parse_warnings"] = warnings
+            ingest = self._ingest_contract(case, stored_path, filename, data)
+            meta["parse_warnings"] = ingest["warnings"]
+            meta["review"] = ingest["review"]
+            meta["extraction_method"] = ingest["method"]
             self.cases.save(case)
 
         self._save_meta(case_id, meta)
@@ -185,22 +191,57 @@ class RefundService:
 
     def _ingest_contract(
         self, case: RefundCase, path: str, filename: str, data: bytes
-    ) -> list[str]:
+    ) -> dict:
+        """Read a contract into case.products; return warnings/review/method."""
         if filename.lower().endswith(_TEXT_EXTENSIONS):
-            text = data.decode("utf-8", errors="replace")
-        elif self.ocr is not None:
+            parsed = parse_contract_text(data.decode("utf-8", errors="replace"))
+            self._apply_parsed(case, parsed)
+            return {
+                "warnings": list(parsed.warnings),
+                "review": {},
+                "method": "text contract (rule-based parser)",
+            }
+
+        if self.ensemble is not None:
+            try:
+                result = self.ensemble.extract(path)  # type: ignore[attr-defined]
+            except Exception as exc:  # noqa: BLE001
+                return {
+                    "warnings": [f"Could not read this contract: {exc}"],
+                    "review": {},
+                    "method": "ensemble (failed)",
+                }
+            return self._apply_ensemble(case, result)
+
+        if self.ocr is not None:
             try:
                 text = self.ocr.extract_text(path)  # type: ignore[attr-defined]
             except Exception as exc:  # noqa: BLE001
-                return [f"Could not read this contract automatically: {exc}"]
-        else:
-            return [
-                "This contract is a PDF or image, and document OCR is not "
+                return {
+                    "warnings": [f"Could not read this contract: {exc}"],
+                    "review": {},
+                    "method": "single reader (failed)",
+                }
+            parsed = parse_contract_text(text)
+            self._apply_parsed(case, parsed)
+            return {
+                "warnings": list(parsed.warnings),
+                "review": {},
+                "method": "single reader",
+            }
+
+        return {
+            "warnings": [
+                "This contract is a PDF or image, and document reading is not "
                 "configured on this server. Upload a text version, paste the "
-                "contract text, or set ANTHROPIC_API_KEY to enable automatic "
-                "reading."
-            ]
-        parsed = parse_contract_text(text)
+                "contract text, or set ANTHROPIC_API_KEY (and optionally "
+                "GEMINI_API_KEY) to enable automatic reading."
+            ],
+            "review": {},
+            "method": "none",
+        }
+
+    def _apply_parsed(self, case: RefundCase, parsed) -> None:
         case.products = parsed.products
         if parsed.detected_purchase_date is not None:
             case.vehicle.purchase_date = parsed.detected_purchase_date
@@ -210,7 +251,41 @@ class RefundService:
         if parsed.detected_vin and not case.vehicle.vin:
             case.vehicle.vin = parsed.detected_vin
         case.status = CaseStatus.AWAITING_AUTHORIZATION
-        return list(parsed.warnings)
+
+    def _apply_ensemble(self, case: RefundCase, result) -> dict:
+        case.products = [item.product for item in result.products]
+        purchase_date = None
+        if result.purchase_date:
+            try:
+                purchase_date = date.fromisoformat(result.purchase_date[:10])
+            except ValueError:
+                purchase_date = None
+        if purchase_date is not None:
+            case.vehicle.purchase_date = purchase_date
+            for product in case.products:
+                if product.start_date is None:
+                    product.start_date = purchase_date
+        if result.vin and not case.vehicle.vin:
+            case.vehicle.vin = result.vin
+        case.status = CaseStatus.AWAITING_AUTHORIZATION
+
+        warnings = list(result.warnings)
+        if purchase_date is None and case.products:
+            warnings.append(
+                "Contract date not found -- refund estimates need a coverage "
+                "start date."
+            )
+        review = {
+            item.product.product_type.value: item.review_fields
+            for item in result.products
+            if item.review_fields
+        }
+        method = (
+            "cross-checked by " + ", ".join(result.extractor_names)
+            if result.extractor_names
+            else "ensemble"
+        )
+        return {"warnings": warnings, "review": review, "method": method}
 
     # -- step 3: confirm services ----------------------------------------
 
@@ -419,6 +494,8 @@ class RefundService:
         return text
 
     def _view(self, case: RefundCase) -> dict:
+        meta = self._load_meta(case.case_id)
+        review = meta.get("review", {})
         estimates = estimate_case(case)
         products = []
         for index, (product, estimate) in enumerate(zip(case.products, estimates)):
@@ -438,9 +515,9 @@ class RefundService:
                         "basis": estimate.basis,
                     },
                     "question": self._question(product, estimate),
+                    "review_fields": review.get(product.product_type.value, []),
                 }
             )
-        meta = self._load_meta(case.case_id)
         prefix = f"/api/cases/{case.case_id}/files/"
         return {
             "case_id": case.case_id,
@@ -464,6 +541,7 @@ class RefundService:
             "products": products,
             "total_estimated_refund": total_estimated_refund(case),
             "parse_warnings": meta.get("parse_warnings", []),
+            "extraction_method": meta.get("extraction_method", ""),
             "documents": [
                 {**doc, "download_url": prefix + doc["name"]}
                 for doc in meta.get("documents", [])

@@ -26,6 +26,18 @@ from .ocr import (
     TesseractOcr,
     get_ocr_adapter,
 )
+from .extraction import (
+    DocumentExtraction,
+    DocumentExtractor,
+    EnsembleExtractor,
+    EnsembleResult,
+    GeminiVisionModel,
+    LLMDocumentExtractor,
+    ReconciledProduct,
+    RegexDocumentExtractor,
+    build_default_ensemble,
+    reconcile,
+)
 from .letters import (
     Letter,
     generate_letter,
@@ -88,4 +100,14 @@ __all__ = [
     "AnthropicVisionOcr",
     "get_ocr_adapter",
     "OcrDependencyError",
+    "EnsembleExtractor",
+    "EnsembleResult",
+    "DocumentExtractor",
+    "DocumentExtraction",
+    "LLMDocumentExtractor",
+    "RegexDocumentExtractor",
+    "ReconciledProduct",
+    "GeminiVisionModel",
+    "build_default_ensemble",
+    "reconcile",
 ]
