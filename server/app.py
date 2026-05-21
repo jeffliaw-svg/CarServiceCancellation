@@ -53,6 +53,30 @@ MAX_BODY_BYTES = 25 * 1024 * 1024
 SERVICE = RefundService(DATA_DIR)
 
 
+def _cors_origin(request_origin: str) -> str:
+    """Resolve the Access-Control-Allow-Origin value for a request.
+
+    REFUNDS_ALLOWED_ORIGIN may be:
+      - unset                  -> no CORS (same-origin / local dev)
+      - "*"                    -> allow any origin (fine for a beta whose
+                                  real gate is the access code + tokens)
+      - one origin, or a comma-separated list -> allow exact matches,
+        tolerant of stray trailing slashes and surrounding whitespace.
+    The browser's actual Origin is echoed back, so the value always
+    matches exactly what the browser expects.
+    """
+    if not ALLOWED_ORIGIN:
+        return ""
+    if ALLOWED_ORIGIN.strip() == "*":
+        return request_origin or "*"
+    allowed = {
+        item.strip().rstrip("/")
+        for item in ALLOWED_ORIGIN.split(",")
+        if item.strip()
+    }
+    return request_origin if request_origin.rstrip("/") in allowed else ""
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "RefundRoute/0.1"
     protocol_version = "HTTP/1.1"
@@ -60,12 +84,12 @@ class Handler(BaseHTTPRequestHandler):
     # -- response helpers -------------------------------------------------
 
     def _set_cors(self) -> None:
-        # No wildcard. CORS headers are sent only when a specific origin
-        # is configured (a split front-end/API deployment); a same-origin
-        # or dev-proxy setup needs none.
-        if not ALLOWED_ORIGIN:
+        # CORS headers are sent only for an allowed origin (see
+        # _cors_origin). A same-origin or dev-proxy setup needs none.
+        allow = _cors_origin(self.headers.get("Origin", ""))
+        if not allow:
             return
-        self.send_header("Access-Control-Allow-Origin", ALLOWED_ORIGIN)
+        self.send_header("Access-Control-Allow-Origin", allow)
         self.send_header("Vary", "Origin")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header(
