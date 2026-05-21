@@ -113,6 +113,40 @@ def test_generate_requires_confirmed_services():
         raise AssertionError("expected ServiceError generating with no services")
 
 
+class _FakeOcr:
+    """A stand-in OCR backend that returns canned contract text."""
+
+    def __init__(self, text: str) -> None:
+        self.text = text
+
+    def extract_text(self, path: str) -> str:
+        return self.text
+
+
+def test_pdf_contract_is_read_through_the_configured_ocr():
+    with open(_CONTRACT, encoding="utf-8") as handle:
+        contract_text = handle.read()
+    service = RefundService(tempfile.mkdtemp(), ocr=_FakeOcr(contract_text))
+    case_id = service.create_case(_INTAKE)["case_id"]
+    service.add_document(
+        case_id, filename="scan.pdf", data=b"%PDF-1.4 fake", kind="contract"
+    )
+    view = service.get_case(case_id)
+    assert len(view["products"]) == 4
+
+
+def test_pdf_contract_without_ocr_returns_a_warning():
+    os.environ.pop("ANTHROPIC_API_KEY", None)
+    service = RefundService(tempfile.mkdtemp())
+    case_id = service.create_case(_INTAKE)["case_id"]
+    service.add_document(
+        case_id, filename="scan.pdf", data=b"%PDF-1.4 fake", kind="contract"
+    )
+    view = service.get_case(case_id)
+    assert view["products"] == []
+    assert any("OCR" in w for w in view["parse_warnings"])
+
+
 def test_get_file_rejects_unsafe_names():
     service = _service()
     case_id = _with_contract(service)

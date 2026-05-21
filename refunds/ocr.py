@@ -2,26 +2,34 @@
 
 `contract_parser` parses the *text* of a contract. For scanned PDFs and
 photos, this module supplies that text. An `OcrAdapter` is a pluggable
-backend; `TesseractOcr` is the concrete, open-source implementation.
+backend; two concrete ones ship:
+
+  - `AnthropicVisionOcr` -- Claude reads the document image. Most
+    reliable on visually dense F&I paperwork. Needs an API key; uses
+    only the standard library (no SDK install).
+  - `TesseractOcr` -- classical open-source OCR via `pytesseract`.
 
 Every adapter is callable, so an adapter instance drops directly into
 the `ocr=` seam of `parse_contract_file`:
 
     from refunds.contract_parser import parse_contract_file
-    parse_contract_file("scan.pdf", ocr="tesseract")
+    parse_contract_file("scan.pdf", ocr="anthropic")
     parse_contract_file("scan.pdf", ocr=TesseractOcr(dpi=400))
 
-The third-party packages (`pytesseract`, `Pillow`, `pdf2image`) and the
-system Tesseract/Poppler binaries are optional -- they are imported
-lazily, and a missing dependency raises `OcrDependencyError` with
-install instructions rather than failing at import time. A vision-LLM or
-cloud-OCR backend can be added later as another `OcrAdapter` subclass.
+Optional dependencies (and, for the vision backend, the API key) are
+resolved lazily; a missing one raises `OcrDependencyError` with
+instructions rather than failing at import time.
 """
 
 from __future__ import annotations
 
 import abc
+import base64
 import importlib
+import json
+import os
+import urllib.error
+import urllib.request
 from typing import Any
 
 
@@ -99,8 +107,141 @@ class TesseractOcr(OcrAdapter):
         return "\n\f\n".join(self._ocr_image(page) for page in pages)
 
 
+_ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
+_ANTHROPIC_VERSION = "2023-06-01"
+
+_VISION_MEDIA_TYPES = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+}
+
+_TRANSCRIBE_PROMPT = (
+    "You are transcribing a vehicle purchase document -- a retail installment "
+    "sales contract or buyer's order. Transcribe ALL text exactly as it "
+    "appears, preserving line breaks and the layout of any itemized sections. "
+    "Be sure every add-on product line is captured with its product name, the "
+    "administrator or provider, any contract or agreement numbers, the price, "
+    "and the term (months and miles). Do not summarize and do not add "
+    "commentary. Output only the transcribed text."
+)
+
+
+class AnthropicVisionOcr(OcrAdapter):
+    """OCR via Claude's vision API -- reads scanned PDFs and photos.
+
+    Far more reliable than classical OCR on visually dense F&I paperwork.
+    The Anthropic API is a plain HTTPS request, so this needs no SDK --
+    only an API key (the `ANTHROPIC_API_KEY` environment variable, or the
+    `api_key` argument).
+    """
+
+    def __init__(
+        self,
+        *,
+        api_key: str | None = None,
+        model: str = "claude-sonnet-4-6",
+        max_tokens: int = 8000,
+        timeout: float = 120.0,
+    ) -> None:
+        self.api_key = api_key if api_key is not None else os.environ.get(
+            "ANTHROPIC_API_KEY", ""
+        )
+        self.model = model
+        self.max_tokens = max_tokens
+        self.timeout = timeout
+
+    def _source_block(self, path: str) -> dict:
+        lower = path.lower()
+        if lower.endswith(".pdf"):
+            block_type, media_type = "document", "application/pdf"
+        else:
+            media_type = next(
+                (mt for ext, mt in _VISION_MEDIA_TYPES.items() if lower.endswith(ext)),
+                None,
+            )
+            if media_type is None:
+                raise ValueError(
+                    f"AnthropicVisionOcr cannot handle {path!r}; expected a PDF "
+                    f"or a PNG/JPEG/GIF/WebP image."
+                )
+            block_type = "image"
+        with open(path, "rb") as handle:
+            encoded = base64.b64encode(handle.read()).decode("ascii")
+        return {
+            "type": block_type,
+            "source": {
+                "type": "base64",
+                "media_type": media_type,
+                "data": encoded,
+            },
+        }
+
+    def _build_payload(self, path: str) -> dict:
+        return {
+            "model": self.model,
+            "max_tokens": self.max_tokens,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        self._source_block(path),
+                        {"type": "text", "text": _TRANSCRIBE_PROMPT},
+                    ],
+                }
+            ],
+        }
+
+    def _post(self, payload: dict) -> dict:
+        request = urllib.request.Request(
+            _ANTHROPIC_URL,
+            data=json.dumps(payload).encode("utf-8"),
+            method="POST",
+            headers={
+                "content-type": "application/json",
+                "x-api-key": self.api_key,
+                "anthropic-version": _ANTHROPIC_VERSION,
+            },
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                return json.loads(response.read())
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            raise OcrDependencyError(
+                f"Anthropic API request failed ({exc.code}): {detail}"
+            ) from exc
+        except urllib.error.URLError as exc:
+            raise OcrDependencyError(
+                f"Could not reach the Anthropic API: {exc.reason}"
+            ) from exc
+
+    def extract_text(self, path: str) -> str:
+        if not self.api_key:
+            raise OcrDependencyError(
+                "AnthropicVisionOcr needs an API key. Set the "
+                "ANTHROPIC_API_KEY environment variable, or pass api_key=..."
+            )
+        payload = self._build_payload(path)  # also validates the file type
+        response = self._post(payload)
+        text = "\n".join(
+            block.get("text", "")
+            for block in response.get("content", [])
+            if block.get("type") == "text"
+        ).strip()
+        if not text:
+            raise OcrDependencyError(
+                "The Anthropic API returned no text for this document."
+            )
+        return text
+
+
 _ADAPTERS: dict[str, type[OcrAdapter]] = {
     "tesseract": TesseractOcr,
+    "anthropic": AnthropicVisionOcr,
+    "claude": AnthropicVisionOcr,
 }
 
 

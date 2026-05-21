@@ -63,6 +63,7 @@ class RefundService:
         *,
         service_name: str = "RefundRoute",
         service_contact: str = "support@refundroute.example",
+        ocr: object | None = None,
     ) -> None:
         self.data_dir = data_dir
         self.cases = CaseStore(os.path.join(data_dir, "cases"))
@@ -70,6 +71,13 @@ class RefundService:
         os.makedirs(self.files_root, exist_ok=True)
         self.service_name = service_name
         self.service_contact = service_contact
+        # Document OCR for scanned (non-text) contracts. Defaults to the
+        # Claude vision backend when an Anthropic API key is configured.
+        self.ocr = ocr
+        if self.ocr is None and os.environ.get("ANTHROPIC_API_KEY"):
+            from refunds import get_ocr_adapter
+
+            self.ocr = get_ocr_adapter("anthropic")
 
     # -- file storage -----------------------------------------------------
 
@@ -167,7 +175,8 @@ class RefundService:
         )
 
         if kind == "contract":
-            warnings = self._ingest_contract(case, filename, data)
+            stored_path = os.path.join(self._case_dir(case_id), stored_name)
+            warnings = self._ingest_contract(case, stored_path, filename, data)
             meta["parse_warnings"] = warnings
             self.cases.save(case)
 
@@ -175,15 +184,23 @@ class RefundService:
         return self._view(case)
 
     def _ingest_contract(
-        self, case: RefundCase, filename: str, data: bytes
+        self, case: RefundCase, path: str, filename: str, data: bytes
     ) -> list[str]:
-        if not filename.lower().endswith(_TEXT_EXTENSIONS):
+        if filename.lower().endswith(_TEXT_EXTENSIONS):
+            text = data.decode("utf-8", errors="replace")
+        elif self.ocr is not None:
+            try:
+                text = self.ocr.extract_text(path)  # type: ignore[attr-defined]
+            except Exception as exc:  # noqa: BLE001
+                return [f"Could not read this contract automatically: {exc}"]
+        else:
             return [
-                "This contract could not be read automatically -- OCR is not "
-                "configured on this server. Upload a text version, or paste "
-                "the contract text."
+                "This contract is a PDF or image, and document OCR is not "
+                "configured on this server. Upload a text version, paste the "
+                "contract text, or set ANTHROPIC_API_KEY to enable automatic "
+                "reading."
             ]
-        parsed = parse_contract_text(data.decode("utf-8", errors="replace"))
+        parsed = parse_contract_text(text)
         case.products = parsed.products
         if parsed.detected_purchase_date is not None:
             case.vehicle.purchase_date = parsed.detected_purchase_date

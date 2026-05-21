@@ -19,7 +19,13 @@ from .contract_parser import (
     parse_contract_file,
     parse_contract_text,
 )
-from .ocr import OcrAdapter, OcrDependencyError, TesseractOcr, get_ocr_adapter
+from .ocr import (
+    AnthropicVisionOcr,
+    OcrAdapter,
+    OcrDependencyError,
+    TesseractOcr,
+    get_ocr_adapter,
+)
 from .letters import (
     Letter,
     generate_letter,
@@ -79,6 +85,7 @@ __all__ = [
     "parse_contract_file",
     "OcrAdapter",
     "TesseractOcr",
+    "AnthropicVisionOcr",
     "get_ocr_adapter",
     "OcrDependencyError",
 ]

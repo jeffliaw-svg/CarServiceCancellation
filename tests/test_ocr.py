@@ -15,7 +15,10 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from refunds.contract_parser import parse_contract_file  # noqa: E402
+import tempfile  # noqa: E402
+
 from refunds.ocr import (  # noqa: E402
+    AnthropicVisionOcr,
     OcrAdapter,
     OcrDependencyError,
     TesseractOcr,
@@ -93,6 +96,67 @@ def test_parse_contract_file_resolves_adapter_by_name():
         pass
     else:
         raise AssertionError("expected OcrDependencyError from the resolved adapter")
+
+
+def test_anthropic_factory_aliases():
+    assert isinstance(get_ocr_adapter("anthropic"), AnthropicVisionOcr)
+    assert isinstance(get_ocr_adapter("claude"), AnthropicVisionOcr)
+
+
+def test_anthropic_without_key_raises():
+    try:
+        AnthropicVisionOcr(api_key="").extract_text("scan.pdf")
+    except OcrDependencyError as exc:
+        assert "API key" in str(exc)
+    else:
+        raise AssertionError("expected OcrDependencyError without an API key")
+
+
+def test_anthropic_rejects_unsupported_extension():
+    try:
+        AnthropicVisionOcr(api_key="test-key").extract_text("contract.docx")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("expected ValueError for an unsupported file type")
+
+
+def test_anthropic_builds_pdf_and_image_blocks():
+    ocr = AnthropicVisionOcr(api_key="test-key")
+    with tempfile.TemporaryDirectory() as folder:
+        pdf_path = os.path.join(folder, "c.pdf")
+        png_path = os.path.join(folder, "c.png")
+        with open(pdf_path, "wb") as handle:
+            handle.write(b"%PDF-1.4 fake")
+        with open(png_path, "wb") as handle:
+            handle.write(b"\x89PNG fake")
+        pdf_block = ocr._build_payload(pdf_path)["messages"][0]["content"][0]
+        png_block = ocr._build_payload(png_path)["messages"][0]["content"][0]
+    assert pdf_block["type"] == "document"
+    assert pdf_block["source"]["media_type"] == "application/pdf"
+    assert png_block["type"] == "image"
+    assert png_block["source"]["media_type"] == "image/png"
+
+
+def test_anthropic_extract_text_parses_the_response():
+    class FakeAnthropic(AnthropicVisionOcr):
+        def _post(self, payload: dict) -> dict:
+            self.sent = payload
+            return {
+                "content": [
+                    {"type": "text", "text": "GAP Waiver -- Zurich -- $400.00"}
+                ]
+            }
+
+    ocr = FakeAnthropic(api_key="test-key")
+    with tempfile.TemporaryDirectory() as folder:
+        png_path = os.path.join(folder, "c.png")
+        with open(png_path, "wb") as handle:
+            handle.write(b"\x89PNG fake")
+        text = ocr.extract_text(png_path)
+    assert "GAP Waiver" in text
+    assert ocr.sent["model"]
+    assert ocr.sent["messages"][0]["content"][0]["type"] == "image"
 
 
 def _run_standalone() -> int:

@@ -8,9 +8,10 @@ Run from the repository root:
     python -m server.app          # serves the API on :8000
 
 Environment variables:
-    PORT               port to listen on (default 8000)
-    REFUNDS_DATA_DIR   where cases and files are stored
-    REFUNDS_WEB_DIST   built front-end to serve (optional, single-host)
+    PORT                port to listen on (default 8000)
+    REFUNDS_DATA_DIR    where cases and files are stored
+    REFUNDS_WEB_DIST    built front-end to serve (optional, single-host)
+    ANTHROPIC_API_KEY   enables Claude vision OCR for scanned contracts
 """
 
 from __future__ import annotations
