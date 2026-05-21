@@ -12,6 +12,8 @@ import io
 import json
 import os
 import re
+import secrets
+import threading
 import zipfile
 from datetime import date
 from email.message import EmailMessage
@@ -40,6 +42,20 @@ _TEXT_EXTENSIONS = (".txt", ".text", ".md")
 
 class ServiceError(Exception):
     """A client-correctable error (maps to HTTP 400)."""
+
+
+class AccessDenied(Exception):
+    """A missing or wrong case access token (maps to HTTP 403)."""
+
+
+def _atomic_write(path: str, data: bytes) -> None:
+    """Write a file atomically and privately (0600), so concurrent readers
+    never see a partial file."""
+    tmp = f"{path}.{os.getpid()}.{secrets.token_hex(4)}.tmp"
+    with open(tmp, "wb") as handle:
+        handle.write(data)
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, path)
 
 
 def _slug(text: str) -> str:
@@ -72,6 +88,9 @@ class RefundService:
         os.makedirs(self.files_root, exist_ok=True)
         self.service_name = service_name
         self.service_contact = service_contact
+        # Serializes the read-modify-write of a case's files so concurrent
+        # requests on one case cannot lose each other's updates.
+        self._lock = threading.Lock()
         # Reading scanned (non-text) contracts. A redundant, cross-checked
         # ensemble is preferred; `ocr` is the single-reader fallback. With
         # neither supplied, an ensemble is built from any configured model
@@ -88,6 +107,7 @@ class RefundService:
     def _case_dir(self, case_id: str) -> str:
         path = os.path.join(self.files_root, case_id)
         os.makedirs(path, exist_ok=True)
+        os.chmod(path, 0o700)
         return path
 
     def _meta_path(self, case_id: str) -> str:
@@ -96,17 +116,23 @@ class RefundService:
     def _load_meta(self, case_id: str) -> dict:
         path = self._meta_path(case_id)
         if not os.path.isfile(path):
-            return {"documents": [], "generated": [], "parse_warnings": []}
+            return {
+                "documents": [],
+                "generated": [],
+                "parse_warnings": [],
+                "access_token": "",
+            }
         with open(path, encoding="utf-8") as handle:
             return json.load(handle)
 
     def _save_meta(self, case_id: str, meta: dict) -> None:
-        with open(self._meta_path(case_id), "w", encoding="utf-8") as handle:
-            json.dump(meta, handle, indent=2)
+        _atomic_write(
+            self._meta_path(case_id),
+            json.dumps(meta, indent=2).encode("utf-8"),
+        )
 
     def _store_file(self, case_id: str, name: str, data: bytes) -> None:
-        with open(os.path.join(self._case_dir(case_id), name), "wb") as handle:
-            handle.write(data)
+        _atomic_write(os.path.join(self._case_dir(case_id), name), data)
 
     def get_file(self, case_id: str, name: str) -> tuple[bytes, str]:
         if not _SAFE_NAME_RE.fullmatch(name):
@@ -150,15 +176,46 @@ class RefundService:
             status=CaseStatus.INTAKE,
         )
         self.cases.save(case)
+        access_token = secrets.token_urlsafe(24)
         self._save_meta(
             case.case_id,
-            {"documents": [], "generated": [], "parse_warnings": []},
+            {
+                "documents": [],
+                "generated": [],
+                "parse_warnings": [],
+                "access_token": access_token,
+            },
         )
-        return self._view(case)
+        # The token is returned exactly once, here -- the client must keep
+        # it. Every later request for this case must present it.
+        return {**self._view(case), "access_token": access_token}
+
+    def authorize(self, case_id: str, token: str | None) -> None:
+        """Raise AccessDenied unless `token` matches the case's token.
+
+        Returns nothing on success. Used to gate every case-scoped
+        request; a wrong token and an unknown case are indistinguishable,
+        so case ids do not have to be secret.
+        """
+        expected = self._load_meta(case_id).get("access_token", "")
+        if (
+            not expected
+            or not token
+            or not secrets.compare_digest(str(token), expected)
+        ):
+            raise AccessDenied("Invalid or missing case access token.")
 
     # -- step 2: ingest documents ----------------------------------------
 
     def add_document(
+        self, case_id: str, *, filename: str, data: bytes, kind: str
+    ) -> dict:
+        with self._lock:
+            return self._add_document(
+                case_id, filename=filename, data=data, kind=kind
+            )
+
+    def _add_document(
         self, case_id: str, *, filename: str, data: bytes, kind: str
     ) -> dict:
         case = self.cases.load(case_id)
@@ -290,6 +347,12 @@ class RefundService:
     # -- step 3: confirm services ----------------------------------------
 
     def confirm_services(self, case_id: str, keep_indices: list[int]) -> dict:
+        with self._lock:
+            return self._confirm_services(case_id, keep_indices)
+
+    def _confirm_services(
+        self, case_id: str, keep_indices: list[int]
+    ) -> dict:
         case = self.cases.load(case_id)
         kept = set(keep_indices)
         for index in kept:
@@ -307,6 +370,10 @@ class RefundService:
     # -- step 4: generate the packet -------------------------------------
 
     def generate(self, case_id: str) -> dict:
+        with self._lock:
+            return self._generate(case_id)
+
+    def _generate(self, case_id: str) -> dict:
         case = self.cases.load(case_id)
         if not case.products:
             raise ServiceError("Confirm at least one service before generating.")

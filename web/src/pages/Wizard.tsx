@@ -26,6 +26,7 @@ type Guard = <T>(fn: () => Promise<T>) => Promise<T | undefined>;
 
 interface StepProps {
   view: CaseView | null;
+  token: string | null;
   setView: (v: CaseView) => void;
   advance: (v: CaseView, next: number) => void;
   guard: Guard;
@@ -273,7 +274,14 @@ function FileRow({
   );
 }
 
-function StepDocuments({ view, setView, advance, guard, busy }: StepProps) {
+function StepDocuments({
+  view,
+  token,
+  setView,
+  advance,
+  guard,
+  busy,
+}: StepProps) {
   const [contractName, setContractName] = useState<string>();
   const [billName, setBillName] = useState<string>();
   const [pasted, setPasted] = useState("");
@@ -283,7 +291,9 @@ function StepDocuments({ view, setView, advance, guard, busy }: StepProps) {
   const products = view.products;
 
   async function uploadContractFile(file: File) {
-    const v = await guard(() => api.uploadFile(view!.case_id, file, "contract"));
+    const v = await guard(() =>
+      api.uploadFile(view!.case_id, token, file, "contract"),
+    );
     if (v) {
       setView(v);
       setContractName(file.name);
@@ -292,7 +302,7 @@ function StepDocuments({ view, setView, advance, guard, busy }: StepProps) {
 
   async function uploadPasted() {
     const v = await guard(() =>
-      api.uploadText(view!.case_id, pasted, "contract"),
+      api.uploadText(view!.case_id, token, pasted, "contract"),
     );
     if (v) {
       setView(v);
@@ -302,7 +312,7 @@ function StepDocuments({ view, setView, advance, guard, busy }: StepProps) {
 
   async function uploadBill(file: File) {
     const v = await guard(() =>
-      api.uploadFile(view!.case_id, file, "bill_of_sale"),
+      api.uploadFile(view!.case_id, token, file, "bill_of_sale"),
     );
     if (v) {
       setView(v);
@@ -398,7 +408,7 @@ function StepDocuments({ view, setView, advance, guard, busy }: StepProps) {
 
 /* ------------------------------------------------------------------ */
 
-function StepConfirm({ view, advance, guard, busy }: StepProps) {
+function StepConfirm({ view, token, advance, guard, busy }: StepProps) {
   // A flagged product starts undecided (null) so the user must actively
   // check it; a cleanly-read product starts confirmed.
   const [decisions, setDecisions] = useState<(boolean | null)[]>(() =>
@@ -427,7 +437,7 @@ function StepConfirm({ view, advance, guard, busy }: StepProps) {
     const keep = view!.products
       .filter((_, i) => decisions[i] === true)
       .map((p) => p.index);
-    const v = await guard(() => api.confirm(view!.case_id, keep));
+    const v = await guard(() => api.confirm(view!.case_id, token, keep));
     if (v) advance(v, 4);
   }
 
@@ -545,12 +555,12 @@ const KIND_LABEL: Record<string, string> = {
   bundle: "Everything, zipped",
 };
 
-function StepGenerate({ view, setView, guard, busy }: StepProps) {
+function StepGenerate({ view, token, setView, guard, busy }: StepProps) {
   if (!view) return null;
   const done = view.generated.length > 0;
 
   async function generate() {
-    const v = await guard(() => api.generate(view!.case_id));
+    const v = await guard(() => api.generate(view!.case_id, token));
     if (v) setView(v);
   }
 
@@ -592,7 +602,7 @@ function StepGenerate({ view, setView, guard, busy }: StepProps) {
       />
       {bundle && (
         <a
-          href={api.fileUrl(view.case_id, bundle.name)}
+          href={api.fileUrl(view.case_id, bundle.name, token)}
           className="mb-5 flex items-center justify-between rounded-2xl bg-accent px-6 py-5 text-white"
         >
           <div>
@@ -606,7 +616,7 @@ function StepGenerate({ view, setView, guard, busy }: StepProps) {
         {rest.map((g) => (
           <a
             key={g.name}
-            href={api.fileUrl(view.case_id, g.name)}
+            href={api.fileUrl(view.case_id, g.name, token)}
             className="flex items-center justify-between gap-4 px-6 py-4 hover:bg-paper"
           >
             <div>
@@ -639,6 +649,7 @@ function StepGenerate({ view, setView, guard, busy }: StepProps) {
 export default function Wizard() {
   const [step, setStep] = useState(1);
   const [view, setView] = useState<CaseView | null>(null);
+  const [token, setToken] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -657,11 +668,12 @@ export default function Wizard() {
 
   function advance(v: CaseView, next: number) {
     setView(v);
+    if (v.access_token) setToken(v.access_token);
     setStep(next);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  const stepProps: StepProps = { view, setView, advance, guard, busy };
+  const stepProps: StepProps = { view, token, setView, advance, guard, busy };
 
   return (
     <div className="min-h-screen">

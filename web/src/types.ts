@@ -35,6 +35,9 @@ export interface DocumentFile {
 
 export interface CaseView {
   case_id: string;
+  // Returned only by createCase; the client keeps it to authorize
+  // every later request for this case.
+  access_token?: string;
   status: string;
   seller: {
     legal_name: string;

@@ -11,7 +11,11 @@ import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from server.service import RefundService, ServiceError  # noqa: E402
+from server.service import (  # noqa: E402
+    AccessDenied,
+    RefundService,
+    ServiceError,
+)
 
 _CONTRACT = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -186,6 +190,27 @@ def test_pdf_contract_uses_the_ensemble_when_configured():
     assert "cross-checked" in view["extraction_method"]
     # Both readers agreed on every field, so nothing is flagged for review.
     assert view["products"][0]["review_fields"] == []
+
+
+def test_create_case_issues_an_access_token():
+    created = _service().create_case(_INTAKE)
+    assert created.get("access_token")
+
+
+def test_authorize_rejects_wrong_or_missing_tokens():
+    service = _service()
+    created = service.create_case(_INTAKE)
+    case_id = created["case_id"]
+
+    service.authorize(case_id, created["access_token"])  # correct: no raise
+
+    for bad in ("wrong-token", "", None):
+        try:
+            service.authorize(case_id, bad)
+        except AccessDenied:
+            pass
+        else:
+            raise AssertionError(f"expected AccessDenied for token {bad!r}")
 
 
 def test_get_file_rejects_unsafe_names():

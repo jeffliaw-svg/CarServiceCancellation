@@ -8,10 +8,12 @@ Run from the repository root:
     python -m server.app          # serves the API on :8000
 
 Environment variables:
-    PORT                port to listen on (default 8000)
-    REFUNDS_DATA_DIR    where cases and files are stored
-    REFUNDS_WEB_DIST    built front-end to serve (optional, single-host)
-    ANTHROPIC_API_KEY   enables Claude vision OCR for scanned contracts
+    PORT                    port to listen on (default 8000)
+    REFUNDS_DATA_DIR        where cases and files are stored
+    REFUNDS_WEB_DIST        built front-end to serve (optional, single-host)
+    REFUNDS_ALLOWED_ORIGIN  browser origin allowed for CORS (split-host deploy)
+    ANTHROPIC_API_KEY       enables Claude vision reading of scanned contracts
+    GEMINI_API_KEY          adds Gemini as a second, cross-checking reader
 """
 
 from __future__ import annotations
@@ -22,6 +24,7 @@ import mimetypes
 import os
 import re
 import sys
+from urllib.parse import parse_qs, urlparse
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _REPO_ROOT not in sys.path:
@@ -29,7 +32,11 @@ if _REPO_ROOT not in sys.path:
 
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer  # noqa: E402
 
-from server.service import RefundService, ServiceError  # noqa: E402
+from server.service import (  # noqa: E402
+    AccessDenied,
+    RefundService,
+    ServiceError,
+)
 
 DATA_DIR = os.environ.get(
     "REFUNDS_DATA_DIR", os.path.join(_REPO_ROOT, "server", "_data")
@@ -37,6 +44,8 @@ DATA_DIR = os.environ.get(
 WEB_DIST = os.path.abspath(
     os.environ.get("REFUNDS_WEB_DIST", os.path.join(_REPO_ROOT, "web", "dist"))
 )
+ALLOWED_ORIGIN = os.environ.get("REFUNDS_ALLOWED_ORIGIN", "")
+MAX_BODY_BYTES = 25 * 1024 * 1024
 
 SERVICE = RefundService(DATA_DIR)
 
@@ -48,9 +57,17 @@ class Handler(BaseHTTPRequestHandler):
     # -- response helpers -------------------------------------------------
 
     def _set_cors(self) -> None:
-        self.send_header("Access-Control-Allow-Origin", "*")
+        # No wildcard. CORS headers are sent only when a specific origin
+        # is configured (a split front-end/API deployment); a same-origin
+        # or dev-proxy setup needs none.
+        if not ALLOWED_ORIGIN:
+            return
+        self.send_header("Access-Control-Allow-Origin", ALLOWED_ORIGIN)
+        self.send_header("Vary", "Origin")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header(
+            "Access-Control-Allow-Headers", "Content-Type, X-Case-Token"
+        )
 
     def _send_json(self, status: int, payload: dict) -> None:
         body = json.dumps(payload).encode("utf-8")
@@ -82,6 +99,11 @@ class Handler(BaseHTTPRequestHandler):
 
     def _read_json(self) -> dict:
         length = int(self.headers.get("Content-Length") or 0)
+        if length > MAX_BODY_BYTES:
+            self.close_connection = True
+            raise ServiceError(
+                f"Request too large (limit {MAX_BODY_BYTES // (1024 * 1024)} MB)."
+            )
         if length == 0:
             return {}
         raw = self.rfile.read(length)
@@ -106,15 +128,21 @@ class Handler(BaseHTTPRequestHandler):
     # -- routing ----------------------------------------------------------
 
     def _dispatch(self, method: str) -> None:
-        path = self.path.split("?", 1)[0]
-        path = path.rstrip("/") or "/"
+        parsed = urlparse(self.path)
+        path = parsed.path.rstrip("/") or "/"
+        params = parse_qs(parsed.query)
+        token = (params.get("token") or [None])[0]
+        if token is None:
+            token = self.headers.get("X-Case-Token")
         try:
-            if self._route(method, path):
+            if self._route(method, path, token):
                 return
             if method == "GET" and not path.startswith("/api"):
                 self._serve_static(path)
             else:
                 self._send_json(404, {"error": "Not found."})
+        except AccessDenied as exc:
+            self._send_json(403, {"error": str(exc)})
         except ServiceError as exc:
             self._send_json(400, {"error": str(exc)})
         except KeyError:
@@ -122,7 +150,7 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as exc:  # noqa: BLE001
             self._send_json(500, {"error": f"Server error: {exc}"})
 
-    def _route(self, method: str, path: str) -> bool:
+    def _route(self, method: str, path: str, token: str | None) -> bool:
         if method == "GET" and path == "/api/health":
             self._send_json(200, {"ok": True})
             return True
@@ -133,11 +161,13 @@ class Handler(BaseHTTPRequestHandler):
 
         match = re.fullmatch(r"/api/cases/([A-Za-z0-9]+)", path)
         if match and method == "GET":
+            SERVICE.authorize(match.group(1), token)
             self._send_json(200, SERVICE.get_case(match.group(1)))
             return True
 
         match = re.fullmatch(r"/api/cases/([A-Za-z0-9]+)/documents", path)
         if match and method == "POST":
+            SERVICE.authorize(match.group(1), token)
             body = self._read_json()
             data = base64.b64decode(body.get("content_base64") or "")
             view = SERVICE.add_document(
@@ -151,6 +181,7 @@ class Handler(BaseHTTPRequestHandler):
 
         match = re.fullmatch(r"/api/cases/([A-Za-z0-9]+)/confirm", path)
         if match and method == "POST":
+            SERVICE.authorize(match.group(1), token)
             body = self._read_json()
             view = SERVICE.confirm_services(match.group(1), body.get("keep") or [])
             self._send_json(200, view)
@@ -158,6 +189,7 @@ class Handler(BaseHTTPRequestHandler):
 
         match = re.fullmatch(r"/api/cases/([A-Za-z0-9]+)/generate", path)
         if match and method == "POST":
+            SERVICE.authorize(match.group(1), token)
             self._send_json(200, SERVICE.generate(match.group(1)))
             return True
 
@@ -165,6 +197,7 @@ class Handler(BaseHTTPRequestHandler):
             r"/api/cases/([A-Za-z0-9]+)/files/([A-Za-z0-9._-]+)", path
         )
         if match and method == "GET":
+            SERVICE.authorize(match.group(1), token)
             data, content_type = SERVICE.get_file(match.group(1), match.group(2))
             self._send_bytes(
                 200, data, content_type, download_name=match.group(2)
@@ -197,6 +230,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
+    os.umask(0o077)  # cases and files are created private to this user
     port = int(os.environ.get("PORT", "8000"))
     httpd = ThreadingHTTPServer(("0.0.0.0", port), Handler)
     print(f"RefundRoute API listening on http://0.0.0.0:{port}")

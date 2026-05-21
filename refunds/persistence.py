@@ -136,6 +136,7 @@ class CaseStore:
     def __init__(self, root: str) -> None:
         self.root = root
         os.makedirs(root, exist_ok=True)
+        os.chmod(root, 0o700)
 
     @staticmethod
     def _check_id(case_id: str) -> None:
@@ -151,8 +152,12 @@ class CaseStore:
 
     def save(self, case: RefundCase) -> str:
         path = self.path_for(case.case_id)
-        with open(path, "w", encoding="utf-8") as handle:
+        # Atomic + private: a concurrent reader never sees a partial file.
+        tmp = f"{path}.{os.getpid()}.tmp"
+        with open(tmp, "w", encoding="utf-8") as handle:
             json.dump(case_to_dict(case), handle, indent=2)
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, path)
         return path
 
     def load(self, case_id: str) -> RefundCase:
