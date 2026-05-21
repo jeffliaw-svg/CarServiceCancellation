@@ -164,6 +164,48 @@ def test_product_seen_by_a_minority_is_warned():
     assert any("GAP Waiver" in w and "1 of 3" in w for w in result.warnings)
 
 
+def test_two_products_of_the_same_type_stay_separate():
+    first = ProductFields(
+        product_type="Vehicle Service Contract", administrator="Zurich",
+        contract_number="VSC-1", price=2000.0, term_months=72,
+    )
+    second = ProductFields(
+        product_type="Vehicle Service Contract", administrator="Zurich",
+        contract_number="VSC-2", price=900.0, term_months=36,
+    )
+    docs = [_doc("r1", [first, second]), _doc("r2", [first, second])]
+    result = reconcile("d.pdf", docs, NullConflictResolver())
+    assert len(result.products) == 2
+    assert sorted(p.product.price for p in result.products) == [900.0, 2000.0]
+    assert sorted(p.product.contract_number for p in result.products) == [
+        "VSC-1",
+        "VSC-2",
+    ]
+
+
+def test_missing_required_field_is_flagged_for_review():
+    pf = ProductFields(
+        product_type="GAP Waiver", administrator="Zurich",
+        contract_number="G1", price=None, term_months=72,
+    )
+    result = reconcile("d.pdf", [_doc("r1", [pf]), _doc("r2", [pf])],
+                       NullConflictResolver())
+    product = result.products[0]
+    assert product.confidence["price"] == "low"
+    assert "price" in product.review_fields
+
+
+def test_missing_optional_field_is_not_flagged():
+    # A time-only product legitimately has no mileage term.
+    pf = ProductFields(
+        product_type="GAP Waiver", administrator="Zurich",
+        contract_number="G1", price=900.0, term_months=72, term_miles=None,
+    )
+    result = reconcile("d.pdf", [_doc("r1", [pf]), _doc("r2", [pf])],
+                       NullConflictResolver())
+    assert "term_miles" not in result.products[0].review_fields
+
+
 def test_vin_is_voted_across_readers():
     docs = [
         _doc("r1", [_vsc()], vin="1HGCM82633A004352"),

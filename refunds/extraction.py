@@ -176,6 +176,10 @@ _FIELD_SPECS = [
     ("term_miles", _norm_int, lambda value: value),
 ]
 
+# Fields routinely absent on a legitimate contract (a time-only product
+# has no mileage term). Their absence is treated as agreement, not a gap.
+_OPTIONAL_FIELDS = {"term_miles"}
+
 
 def _parse_json_object(text: str) -> dict:
     start = text.find("{")
@@ -472,9 +476,10 @@ def _reconcile_field(
             values.append(normalized)
 
     if not values:
-        # No reader reported this field -- treat it as unanimously absent
-        # rather than flagging an empty field for the customer to review.
-        return None, HIGH
+        # No reader reported this field. For a routinely-optional field
+        # that is genuine absence; for a required field (e.g. the price)
+        # it means every reader missed it -- flag it for the customer.
+        return None, (HIGH if field_name in _OPTIONAL_FIELDS else LOW)
 
     groups: dict[object, list] = {}
     for value in values:
@@ -500,6 +505,85 @@ def _reconcile_field(
     return resolved, (MEDIUM if verdict.confident else LOW)
 
 
+def _best_anchor(
+    fields: ProductFields, anchors: list[ProductFields], used: set[int]
+) -> int | None:
+    """Pick the anchor slot a product best matches, by contract # then price."""
+    available = [i for i in range(len(anchors)) if i not in used]
+    if not available:
+        return None
+    contract = _norm_contract(fields.contract_number)
+    if contract:
+        for index in available:
+            if _norm_contract(anchors[index].contract_number) == contract:
+                return index
+    price = _norm_price(fields.price)
+    if price is not None:
+        priced = [
+            (index, _norm_price(anchors[index].price)) for index in available
+        ]
+        priced = [(i, p) for i, p in priced if p is not None]
+        if priced:
+            return min(priced, key=lambda item: abs(item[1] - price))[0]
+    return available[0]
+
+
+def _split_same_type(
+    per_source: dict[str, list[ProductFields]], slots: int
+) -> list[list[tuple[str, ProductFields]]]:
+    """Split several same-type products from each reader into aligned buckets."""
+    ordered = sorted(per_source.items(), key=lambda item: -len(item[1]))
+    buckets: list[list[tuple[str, ProductFields]]] = [[] for _ in range(slots)]
+    seed_source, seed_products = ordered[0]
+    anchors: list[ProductFields] = []
+    for index, fields in enumerate(seed_products):
+        buckets[index].append((seed_source, fields))
+        anchors.append(fields)
+    for source, products in ordered[1:]:
+        used: set[int] = set()
+        for fields in products:
+            index = _best_anchor(fields, anchors, used)
+            if index is None:
+                buckets.append([(source, fields)])
+                anchors.append(fields)
+            else:
+                buckets[index].append((source, fields))
+                used.add(index)
+    return buckets
+
+
+def _cluster_products(
+    succeeded: list[DocumentExtraction],
+) -> list[tuple[ProductType, list[tuple[str, ProductFields]]]]:
+    """Group products across extractions into one cluster per real product.
+
+    Products are grouped by type. The common case -- at most one product
+    of a type per reader -- yields a single cluster. When a reader reports
+    several products of the same type, the group is split so two distinct
+    same-type products are never merged into one.
+    """
+    by_type: dict[ProductType, list[tuple[str, ProductFields]]] = {}
+    for extraction in succeeded:
+        for fields in extraction.products:
+            product_type = classify_product_type(fields.product_type or "")
+            by_type.setdefault(product_type, []).append(
+                (extraction.source, fields)
+            )
+
+    clusters: list[tuple[ProductType, list[tuple[str, ProductFields]]]] = []
+    for product_type, members in by_type.items():
+        per_source: dict[str, list[ProductFields]] = {}
+        for source, fields in members:
+            per_source.setdefault(source, []).append(fields)
+        slots = max((len(items) for items in per_source.values()), default=1)
+        if slots <= 1:
+            clusters.append((product_type, members))
+        else:
+            for bucket in _split_same_type(per_source, slots):
+                clusters.append((product_type, bucket))
+    return clusters
+
+
 def reconcile(
     path: str, extractions: list[DocumentExtraction], resolver: ConflictResolver
 ) -> EnsembleResult:
@@ -523,17 +607,9 @@ def reconcile(
             f"every field carefully."
         )
 
-    clusters: dict[ProductType, list[tuple[str, ProductFields]]] = {}
-    for extraction in succeeded:
-        for fields in extraction.products:
-            product_type = classify_product_type(fields.product_type or "")
-            clusters.setdefault(product_type, []).append(
-                (extraction.source, fields)
-            )
-
     total = len(succeeded)
     products: list[ReconciledProduct] = []
-    for product_type, members in clusters.items():
+    for product_type, members in _cluster_products(succeeded):
         chosen: dict[str, object] = {}
         confidence: dict[str, str] = {}
         for field_name, normalizer, keyfn in _FIELD_SPECS:

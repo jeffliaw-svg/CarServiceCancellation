@@ -161,6 +161,10 @@ def generate_letter(
                 f" (after a stated cancellation fee of "
                 f"{fmt_money(product.cancellation_fee)})"
             )
+        else:
+            estimate_paragraph += (
+                ", before any cancellation fee provided for in the Contract"
+            )
         estimate_paragraph += (
             ". This figure is an estimate only; please calculate the exact "
             "unearned amount in accordance with the cancellation provisions of "

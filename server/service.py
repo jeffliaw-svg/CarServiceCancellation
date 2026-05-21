@@ -470,15 +470,24 @@ class RefundService:
     def _question(self, product: AddOnProduct, estimate) -> str:
         label = product.product_type.value
         admin = product.administrator_name or "the administrator"
-        text = (
-            f"It appears you purchased {label} from {admin} for "
-            f"{_money(product.price)}."
-        )
-        if estimate.can_estimate:
+        if product.price and product.price > 0:
+            text = (
+                f"It appears you purchased {label} from {admin} for "
+                f"{_money(product.price)}."
+            )
+        else:
+            text = (
+                f"It appears you purchased {label} from {admin}, but we could "
+                f"not read the price from your contract -- please check it."
+            )
+
+        if estimate.can_estimate and estimate.net_refund > 0:
             text += (
                 f" Because you sold the vehicle, you appear to be entitled to a "
-                f"pro-rata refund of approximately {_money(estimate.net_refund)}, "
-                f"based on {estimate.basis}."
+                f"pro-rata refund of roughly {_money(estimate.net_refund)} -- "
+                f"before any cancellation fee the administrator may deduct -- "
+                f"based on {estimate.basis}. This is an estimate, not a "
+                f"guaranteed amount."
             )
         else:
             text += (
@@ -488,8 +497,8 @@ class RefundService:
             )
         if product.product_type == ProductType.GAP:
             text += (
-                " GAP refunds on early payoff or sale are also required by law "
-                "in many states."
+                " GAP refunds are also required by law in many states, though "
+                "the exact method varies."
             )
         return text
 
