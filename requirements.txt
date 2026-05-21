@@ -1,0 +1,6 @@
+# The RefundRoute API server runs on the Python standard library alone.
+# No third-party packages are required to run it (Python 3.10+).
+#
+# Optional: the Tesseract OCR backend (refunds/ocr.py) needs extras --
+# install them only if you use that backend instead of the vision-model
+# ensemble:  pip install pytesseract Pillow pdf2image

@@ -6,3 +6,6 @@ server/_data/
 web/node_modules/
 web/dist/
 *.local
+.env
+.env.*
+!.env.example
