@@ -196,13 +196,16 @@ function StepIntake({ advance, guard, busy }: StepProps) {
           </div>
           <div className="grid gap-5 sm:grid-cols-2">
             <div>
-              <Label>Vehicle VIN or license plate</Label>
+              <Label>Vehicle VIN</Label>
               <input
                 className="field"
                 value={vin}
                 onChange={(e) => setVin(e.target.value.toUpperCase())}
                 placeholder="1HGCM82633A004352"
               />
+              <p className="mt-1.5 text-xs text-muted">
+                The 17-character number on your contract and registration.
+              </p>
             </div>
             <div>
               <Label>Date you sold the vehicle</Label>
@@ -396,21 +399,33 @@ function StepDocuments({ view, setView, advance, guard, busy }: StepProps) {
 /* ------------------------------------------------------------------ */
 
 function StepConfirm({ view, advance, guard, busy }: StepProps) {
-  const [confirmed, setConfirmed] = useState<boolean[]>(
-    () => (view ? view.products.map(() => true) : []),
+  // A flagged product starts undecided (null) so the user must actively
+  // check it; a cleanly-read product starts confirmed.
+  const [decisions, setDecisions] = useState<(boolean | null)[]>(() =>
+    view
+      ? view.products.map((p) => (p.review_fields.length === 0 ? true : null))
+      : [],
   );
   if (!view) return null;
 
+  const decide = (index: number, value: boolean) =>
+    setDecisions((current) =>
+      current.map((v, j) => (j === index ? value : v)),
+    );
+
   const total = view.products.reduce(
     (sum, p, i) =>
-      confirmed[i] && p.estimate.can_estimate ? sum + p.estimate.net_refund : sum,
+      decisions[i] === true && p.estimate.can_estimate
+        ? sum + p.estimate.net_refund
+        : sum,
     0,
   );
-  const keptCount = confirmed.filter(Boolean).length;
+  const keptCount = decisions.filter((d) => d === true).length;
+  const undecided = decisions.some((d) => d === null);
 
   async function submit() {
     const keep = view!.products
-      .filter((_, i) => confirmed[i])
+      .filter((_, i) => decisions[i] === true)
       .map((p) => p.index);
     const v = await guard(() => api.confirm(view!.case_id, keep));
     if (v) advance(v, 4);
@@ -421,17 +436,21 @@ function StepConfirm({ view, advance, guard, busy }: StepProps) {
       <Heading
         kicker="Step 3 of 4"
         title="Confirm each service"
-        lead="Here is what we read from your contract. Confirm the ones that are yours -- uncheck anything you do not recognize."
+        lead="Here is what we read from your contract. Confirm the ones that are yours. Anything we flagged for review starts unanswered -- check it against your paperwork first."
       />
       <div className="space-y-4">
         {view.products.map((p, i) => {
-          const on = confirmed[i];
+          const decision = decisions[i];
+          const border =
+            decision === true
+              ? "border-accent"
+              : decision === false
+                ? "border-line opacity-60"
+                : "border-amber-300";
           return (
             <div
               key={p.index}
-              className={`rounded-2xl border bg-surface p-6 transition ${
-                on ? "border-accent" : "border-line opacity-70"
-              }`}
+              className={`rounded-2xl border bg-surface p-6 transition ${border}`}
             >
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div className="max-w-xl">
@@ -461,30 +480,31 @@ function StepConfirm({ view, advance, guard, busy }: StepProps) {
                   <strong>{p.review_fields.map(fieldLabel).join(", ")}</strong>{" "}
                   for this product. Please double-check{" "}
                   {p.review_fields.length === 1 ? "it" : "them"} against your
-                  paperwork before sending.
+                  paperwork before confirming.
                 </div>
               )}
-              <div className="mt-5 flex gap-2">
+              <div className="mt-5 flex items-center gap-2">
                 <button
                   className={`btn !py-2 !text-xs ${
-                    on ? "btn-primary" : "btn-ghost"
+                    decision === true ? "btn-primary" : "btn-ghost"
                   }`}
-                  onClick={() =>
-                    setConfirmed((c) => c.map((v, j) => (j === i ? true : v)))
-                  }
+                  onClick={() => decide(i, true)}
                 >
-                  {on ? "✓ Confirmed" : "Yes, this is mine"}
+                  {decision === true ? "✓ Confirmed" : "Yes, this is mine"}
                 </button>
                 <button
                   className={`btn !py-2 !text-xs ${
-                    on ? "btn-ghost" : "btn-primary"
+                    decision === false ? "btn-primary" : "btn-ghost"
                   }`}
-                  onClick={() =>
-                    setConfirmed((c) => c.map((v, j) => (j === i ? false : v)))
-                  }
+                  onClick={() => decide(i, false)}
                 >
                   Not mine
                 </button>
+                {decision === null && (
+                  <span className="text-xs font-medium text-amber-700">
+                    Needs your decision
+                  </span>
+                )}
               </div>
             </div>
           );
@@ -501,10 +521,14 @@ function StepConfirm({ view, advance, guard, busy }: StepProps) {
         </div>
         <button
           className="btn btn-light"
-          disabled={keptCount === 0 || busy}
+          disabled={undecided || keptCount === 0 || busy}
           onClick={submit}
         >
-          {busy ? "Saving…" : "Generate my letters →"}
+          {busy
+            ? "Saving…"
+            : undecided
+              ? "Answer every service above"
+              : "Generate my letters →"}
         </button>
       </div>
     </Panel>

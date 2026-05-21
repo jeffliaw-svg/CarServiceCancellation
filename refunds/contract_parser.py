@@ -20,12 +20,20 @@ from typing import Callable
 
 from .models import AddOnProduct, ProductType
 
-_MONEY_RE = re.compile(r"\$?\s?(\d[\d,]*\.\d{2})\b")
+# A dollar amount: "$2,695" or "$2,695.00" (cents optional when prefixed
+# with $) or "2,695.00" (cents required when there is no $, so plain
+# integers like years and mileages are not mistaken for prices).
+_MONEY_RE = re.compile(r"(\$\s?\d[\d,]*(?:\.\d{2})?|\d[\d,]*\.\d{2})\b")
+
+
+def _money_value(token: str) -> float:
+    return float(token.replace("$", "").replace(",", "").strip())
 _MONTHS_RE = re.compile(r"(\d[\d,]*)\s*(?:months?|mos?)\b", re.IGNORECASE)
 _MILES_RE = re.compile(r"(\d[\d,]*)\s*miles?\b", re.IGNORECASE)
 _CONTRACT_RE = re.compile(
     r"(?:contract|agreement|policy|plan|certificate)\s*"
-    r"(?:no\.?|number|num\.?|#)\s*[:#]?\s*([A-Za-z0-9][A-Za-z0-9\-]{2,})",
+    r"(?:no\.?|number|num\.?|#)\s*[:#]?\s*"
+    r"(?=[A-Za-z0-9-]*\d)([A-Za-z0-9][A-Za-z0-9\-]{2,})",
     re.IGNORECASE,
 )
 _VIN_RE = re.compile(r"\b([A-HJ-NPR-Z0-9]{17})\b")
@@ -131,9 +139,10 @@ def detect_purchase_date(text: str) -> date | None:
         for position, found in candidates
         if any(0 <= position - label <= 30 for label in label_positions)
     ]
-    if labeled:
-        return min(labeled)
-    return min(found for _, found in candidates)
+    # Only trust a date that sits next to a "date" label. Guessing from an
+    # unlabeled date risks picking a birth date or prior-lien date, which
+    # would silently skew every refund estimate.
+    return min(labeled) if labeled else None
 
 
 def _match_product_type(line: str) -> ProductType | None:
@@ -175,7 +184,7 @@ def _build_product(
     warnings: list[str] = []
     label = product_type.value
 
-    price = float(prices[-1].replace(",", "")) if prices else 0.0
+    price = _money_value(prices[-1]) if prices else 0.0
     if not prices:
         warnings.append(f"{label}: no price found; defaulted to $0.00 -- verify.")
 
