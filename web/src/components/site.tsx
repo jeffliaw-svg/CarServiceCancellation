@@ -1,4 +1,4 @@
-import { motion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 
@@ -13,6 +13,10 @@ export function Reveal({
   delay?: number;
   className?: string;
 }) {
+  const reduceMotion = useReducedMotion();
+  if (reduceMotion) {
+    return <div className={className}>{children}</div>;
+  }
   return (
     <motion.div
       className={className}

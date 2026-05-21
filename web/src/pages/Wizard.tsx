@@ -252,7 +252,7 @@ function FileRow({
 }) {
   return (
     <label
-      className={`flex cursor-pointer items-center justify-between gap-4 rounded-2xl border border-dashed border-line bg-paper px-5 py-4 transition hover:border-accent ${
+      className={`file-row flex cursor-pointer items-center justify-between gap-4 rounded-2xl border border-dashed border-line bg-paper px-5 py-4 transition hover:border-accent ${
         busy ? "pointer-events-none opacity-60" : ""
       }`}
     >
@@ -260,13 +260,14 @@ function FileRow({
         <p className="font-medium">{title}</p>
         <p className="text-xs text-muted">{fileName ? `Selected: ${fileName}` : hint}</p>
       </div>
-      <span className="btn btn-ghost !px-4 !py-2 !text-xs">
+      <span className="btn btn-ghost !px-4 !py-2 !text-xs" aria-hidden="true">
         {fileName ? "Replace" : "Choose file"}
       </span>
       <input
         type="file"
         accept={accept}
-        className="hidden"
+        aria-label={title}
+        className="file-input"
         onChange={(e) => {
           const file = e.target.files?.[0];
           if (file) onPick(file);
@@ -518,11 +519,17 @@ function StepConfirm({ view, token, advance, guard, busy }: StepProps) {
                   paperwork before confirming.
                 </div>
               )}
-              <div className="mt-5 flex items-center gap-2">
+              <div
+                className="mt-5 flex items-center gap-2"
+                role="group"
+                aria-label={`Is the ${p.product_type} yours?`}
+              >
                 <button
                   className={`btn !py-2 !text-xs ${
                     decision === true ? "btn-primary" : "btn-ghost"
                   }`}
+                  aria-pressed={decision === true}
+                  aria-label={`Yes, the ${p.product_type} is mine`}
                   onClick={() => decide(i, true)}
                 >
                   {decision === true ? "✓ Confirmed" : "Yes, this is mine"}
@@ -531,6 +538,8 @@ function StepConfirm({ view, token, advance, guard, busy }: StepProps) {
                   className={`btn !py-2 !text-xs ${
                     decision === false ? "btn-primary" : "btn-ghost"
                   }`}
+                  aria-pressed={decision === false}
+                  aria-label={`No, the ${p.product_type} is not mine`}
                   onClick={() => decide(i, false)}
                 >
                   Not mine
@@ -781,7 +790,10 @@ export default function Wizard() {
         </div>
 
         {error && (
-          <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <div
+            role="alert"
+            className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+          >
             {error}
           </div>
         )}
