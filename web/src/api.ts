@@ -45,10 +45,11 @@ export interface Intake {
 }
 
 export const api = {
-  createCase: (intake: Intake) =>
+  createCase: (intake: Intake, accessCode?: string) =>
     request<CaseView>("/api/cases", {
       method: "POST",
       body: JSON.stringify(intake),
+      headers: accessCode ? { "X-Access-Code": accessCode } : undefined,
     }),
 
   getCase: (id: string, token: string | null) =>

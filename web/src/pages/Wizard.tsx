@@ -125,6 +125,9 @@ function StepIntake({ advance, guard, busy }: StepProps) {
   const [phone, setPhone] = useState("");
   const [vin, setVin] = useState("");
   const [saleDate, setSaleDate] = useState("");
+  const [accessCode, setAccessCode] = useState(
+    () => localStorage.getItem("refundroute_access_code") || "",
+  );
 
   const ready =
     legalName.trim() && address.trim() && vin.trim() && saleDate.trim();
@@ -141,8 +144,13 @@ function StepIntake({ advance, guard, busy }: StepProps) {
       vin: vin.trim(),
       sale_date: saleDate,
     };
-    const v = await guard(() => api.createCase(intake));
-    if (v) advance(v, 2);
+    const v = await guard(() => api.createCase(intake, accessCode.trim()));
+    if (v) {
+      if (accessCode.trim()) {
+        localStorage.setItem("refundroute_access_code", accessCode.trim());
+      }
+      advance(v, 2);
+    }
   }
 
   return (
@@ -152,8 +160,41 @@ function StepIntake({ advance, guard, busy }: StepProps) {
         title="Tell us about the sale"
         lead="Just enough to identify you and the vehicle. Everything else comes from your contract."
       />
+      <div className="mb-6 rounded-2xl border border-line bg-accent-soft px-5 py-4 text-sm text-accent-deep">
+        <p className="font-semibold">Your information stays private.</p>
+        <ul className="mt-2 space-y-1">
+          <li>
+            We use your details only to prepare and address your refund
+            requests.
+          </li>
+          <li>
+            Your uploaded documents are stored privately, and never sold or
+            shared.
+          </li>
+          <li>
+            Starting a claim is free — you will see any fee before you
+            download your packet.
+          </li>
+        </ul>
+        <p className="mt-2 text-xs text-accent-deep/80">
+          RefundRoute is not a law firm and does not give legal advice.
+        </p>
+      </div>
       <div className="rounded-3xl border border-line bg-surface p-7">
         <div className="grid gap-5">
+          <div>
+            <Label>Access code</Label>
+            <input
+              className="field"
+              value={accessCode}
+              onChange={(e) => setAccessCode(e.target.value)}
+              placeholder="Closed-beta access code"
+              autoComplete="off"
+            />
+            <p className="mt-1.5 text-xs text-muted">
+              RefundRoute is in a closed beta. Enter the code you were given.
+            </p>
+          </div>
           <div>
             <Label>Your full legal name</Label>
             <input

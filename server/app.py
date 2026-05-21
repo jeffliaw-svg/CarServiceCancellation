@@ -12,6 +12,7 @@ Environment variables:
     REFUNDS_DATA_DIR        where cases and files are stored
     REFUNDS_WEB_DIST        built front-end to serve (optional, single-host)
     REFUNDS_ALLOWED_ORIGIN  browser origin allowed for CORS (split-host deploy)
+    REFUNDS_ACCESS_CODE     closed-beta gate: required to start a new claim
     ANTHROPIC_API_KEY       enables Claude vision reading of scanned contracts
     GEMINI_API_KEY          adds Gemini as a second, cross-checking reader
 """
@@ -23,6 +24,7 @@ import json
 import mimetypes
 import os
 import re
+import secrets
 import sys
 from urllib.parse import parse_qs, urlparse
 
@@ -45,6 +47,7 @@ WEB_DIST = os.path.abspath(
     os.environ.get("REFUNDS_WEB_DIST", os.path.join(_REPO_ROOT, "web", "dist"))
 )
 ALLOWED_ORIGIN = os.environ.get("REFUNDS_ALLOWED_ORIGIN", "")
+ACCESS_CODE = os.environ.get("REFUNDS_ACCESS_CODE", "")
 MAX_BODY_BYTES = 25 * 1024 * 1024
 
 SERVICE = RefundService(DATA_DIR)
@@ -66,7 +69,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Vary", "Origin")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header(
-            "Access-Control-Allow-Headers", "Content-Type, X-Case-Token"
+            "Access-Control-Allow-Headers",
+            "Content-Type, X-Case-Token, X-Access-Code",
         )
 
     def _send_json(self, status: int, payload: dict) -> None:
@@ -150,12 +154,24 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as exc:  # noqa: BLE001
             self._send_json(500, {"error": f"Server error: {exc}"})
 
+    def _require_access_code(self) -> None:
+        """Closed-beta gate on starting a new claim."""
+        if not ACCESS_CODE:
+            return
+        provided = self.headers.get("X-Access-Code", "")
+        if not provided or not secrets.compare_digest(provided, ACCESS_CODE):
+            raise AccessDenied(
+                "RefundRoute is in a closed beta. A valid access code is "
+                "required to start a claim."
+            )
+
     def _route(self, method: str, path: str, token: str | None) -> bool:
         if method == "GET" and path == "/api/health":
             self._send_json(200, {"ok": True})
             return True
 
         if method == "POST" and path == "/api/cases":
+            self._require_access_code()
             self._send_json(200, SERVICE.create_case(self._read_json()))
             return True
 
