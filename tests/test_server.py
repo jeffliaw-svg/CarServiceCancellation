@@ -64,7 +64,7 @@ def test_ingesting_a_contract_parses_products_and_estimates():
     assert view["vehicle"]["purchase_date"] == "2023-03-15"
     # A coverage start date was detected, so refunds can be estimated.
     assert view["total_estimated_refund"] > 0
-    assert all(p["question"] for p in view["products"])
+    assert all(p["headline"] and p["detail"] for p in view["products"])
 
 
 def test_confirmation_drops_unconfirmed_services():

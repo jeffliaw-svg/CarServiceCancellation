@@ -559,40 +559,46 @@ class RefundService:
     def get_case(self, case_id: str) -> dict:
         return self._view(self.cases.load(case_id))
 
-    def _question(self, product: AddOnProduct, estimate) -> str:
+    def _confirmation_text(
+        self, product: AddOnProduct, estimate
+    ) -> tuple[str, str]:
+        """Return (plain headline, collapsible detail) for the confirm step."""
         label = product.product_type.value
-        admin = product.administrator_name or "the administrator"
+        admin = product.administrator_name or "the provider"
         if product.price and product.price > 0:
-            text = (
-                f"It appears you purchased {label} from {admin} for "
+            headline = (
+                f"You appear to have bought {label} from {admin} for "
                 f"{_money(product.price)}."
             )
         else:
-            text = (
-                f"It appears you purchased {label} from {admin}, but we could "
-                f"not read the price from your contract -- please check it."
+            headline = (
+                f"You appear to have bought {label} from {admin}. We could not "
+                f"read the price from your contract."
             )
 
+        detail: list[str] = []
         if estimate.can_estimate and estimate.net_refund > 0:
-            text += (
-                f" Because you sold the vehicle, you appear to be entitled to a "
+            detail.append(
+                f"Because you sold the vehicle, you appear to be owed a "
                 f"pro-rata refund of roughly {_money(estimate.net_refund)} -- "
-                f"before any cancellation fee the administrator may deduct -- "
-                f"based on {estimate.basis}. This is an estimate, not a "
-                f"guaranteed amount."
+                f"the unused part of what you paid, based on {estimate.basis}."
+            )
+            detail.append(
+                "This is an estimate, before any cancellation fee the provider "
+                "may deduct. The provider calculates the binding amount."
             )
         else:
-            text += (
-                " Because you sold the vehicle, you appear to be entitled to a "
-                "pro-rata refund of the unearned portion you paid; the "
-                "administrator will calculate the exact amount."
+            detail.append(
+                "Because you sold the vehicle, you appear to be owed a pro-rata "
+                "refund of the unused part of what you paid. The provider will "
+                "calculate the exact amount."
             )
         if product.product_type == ProductType.GAP:
-            text += (
-                " GAP refunds are also required by law in many states, though "
+            detail.append(
+                "GAP refunds are also required by law in many states, though "
                 "the exact method varies."
             )
-        return text
+        return headline, " ".join(detail)
 
     def _view(self, case: RefundCase) -> dict:
         meta = self._load_meta(case.case_id)
@@ -600,6 +606,7 @@ class RefundService:
         estimates = estimate_case(case)
         products = []
         for index, (product, estimate) in enumerate(zip(case.products, estimates)):
+            headline, detail = self._confirmation_text(product, estimate)
             products.append(
                 {
                     "index": index,
@@ -615,7 +622,8 @@ class RefundService:
                         "gross_refund": estimate.gross_refund,
                         "basis": estimate.basis,
                     },
-                    "question": self._question(product, estimate),
+                    "headline": headline,
+                    "detail": detail,
                     "review_fields": review.get(product.product_type.value, []),
                 }
             )

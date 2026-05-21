@@ -1,9 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Link } from "react-router-dom";
 import { api, moneyExact, type Intake } from "../api";
 import type { CaseView } from "../types";
 import { Logo } from "../components/site";
+
+const STORAGE_KEY = "refundroute_case";
 
 const STEP_LABELS = [
   "Your details",
@@ -469,9 +471,20 @@ function StepConfirm({ view, token, advance, guard, busy }: StepProps) {
                     {p.administrator}
                     {p.contract_number ? ` · Contract ${p.contract_number}` : ""}
                   </p>
-                  <p className="mt-3 text-sm leading-relaxed text-ink/80">
-                    {p.question}
+                  <p className="mt-3 text-[15px] font-medium leading-relaxed text-ink">
+                    {p.headline}
                   </p>
+                  <details className="group mt-2">
+                    <summary className="text-xs font-medium text-accent hover:underline">
+                      How we estimated this
+                      <span className="ml-1 inline-block transition-transform group-open:rotate-90">
+                        &rsaquo;
+                      </span>
+                    </summary>
+                    <p className="mt-2 text-sm leading-relaxed text-muted">
+                      {p.detail}
+                    </p>
+                  </details>
                 </div>
                 <div className="text-right">
                   <p className="text-xs uppercase tracking-widest text-muted">
@@ -652,6 +665,47 @@ export default function Wizard() {
   const [token, setToken] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [resuming, setResuming] = useState(
+    () => !!localStorage.getItem(STORAGE_KEY),
+  );
+
+  // Resume a case in progress after a refresh, a closed tab, or the back
+  // button. Case id + token + step are persisted to localStorage.
+  useEffect(() => {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (!saved) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const stored = JSON.parse(saved) as {
+          caseId: string;
+          token: string;
+          step: number;
+        };
+        const restored = await api.getCase(stored.caseId, stored.token);
+        if (cancelled) return;
+        setView(restored);
+        setToken(stored.token);
+        setStep(stored.step || 1);
+      } catch {
+        localStorage.removeItem(STORAGE_KEY);
+      } finally {
+        if (!cancelled) setResuming(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (view && token) {
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({ caseId: view.case_id, token, step }),
+      );
+    }
+  }, [view, token, step]);
 
   const guard: Guard = async (fn) => {
     setBusy(true);
@@ -673,14 +727,39 @@ export default function Wizard() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
+  function startOver() {
+    localStorage.removeItem(STORAGE_KEY);
+    setView(null);
+    setToken(null);
+    setStep(1);
+    setError(null);
+  }
+
   const stepProps: StepProps = { view, token, setView, advance, guard, busy };
+
+  if (resuming) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <p className="text-sm text-muted">Resuming your claim…</p>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen">
       <header className="border-b border-line bg-surface">
         <div className="mx-auto flex max-w-3xl items-center justify-between px-6 py-4">
           <Logo />
-          <span className="text-xs text-muted">Secure refund workup</span>
+          {view ? (
+            <button
+              className="text-xs font-medium text-muted hover:text-ink"
+              onClick={startOver}
+            >
+              Start over
+            </button>
+          ) : (
+            <span className="text-xs text-muted">Secure refund workup</span>
+          )}
         </div>
       </header>
 

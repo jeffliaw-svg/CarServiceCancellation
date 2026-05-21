@@ -14,7 +14,8 @@ export interface Product {
   term_months: number | null;
   term_miles: number | null;
   estimate: Estimate;
-  question: string;
+  headline: string;
+  detail: string;
   review_fields: string[];
 }
 
