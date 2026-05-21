@@ -75,21 +75,24 @@ def test_confirmation_drops_unconfirmed_services():
     assert view["status"] == "ready_to_send"
 
 
-def test_generate_produces_letters_authorization_and_bundle():
+def test_generate_produces_one_packet_per_mailing_and_a_bundle():
     service = _service()
     case_id = _with_contract(service)
     service.confirm_services(case_id, [0, 1, 2, 3])
     view = service.generate(case_id)
 
     kinds = {item["kind"] for item in view["generated"]}
-    assert {"letter", "authorization", "checklist", "bundle"} <= kinds
+    assert {"packet", "bundle"} <= kinds
 
-    letters = [i for i in view["generated"] if i["kind"] == "letter"]
-    assert len(letters) == 4
+    packets = [i for i in view["generated"] if i["kind"] == "packet"]
+    assert len(packets) == 4
 
-    pdf_bytes, content_type = service.get_file(case_id, letters[0]["name"])
+    pdf_bytes, content_type = service.get_file(case_id, packets[0]["name"])
     assert pdf_bytes.startswith(b"%PDF-")
     assert content_type == "application/pdf"
+    # Each packet is page-numbered and carries the instruction sheet.
+    assert b"Page 1 of" in pdf_bytes
+    assert b"INSTRUCTION SHEET" in pdf_bytes
 
 
 def test_generate_creates_email_drafts_when_an_admin_email_is_known():

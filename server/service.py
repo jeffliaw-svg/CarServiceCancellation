@@ -385,59 +385,59 @@ class RefundService:
             service_name=self.service_name,
             service_contact=self.service_contact,
         )
+        authorization = generate_authorization(
+            case,
+            service_name=self.service_name,
+            service_contact=self.service_contact,
+        )
+        total = len(letters)
 
-        for letter in letters:
-            base = f"letter-{_slug(letter.recipient_name)}"
-            pdf_name = f"{base}.pdf"
-            pdf_bytes = text_to_pdf(letter.body)
-            self._store_file(case_id, pdf_name, pdf_bytes)
+        # One self-contained, print-ready packet per outbound mailing:
+        # an instruction sheet on top, then the letter, then the
+        # authorization -- page-numbered, with a running header.
+        for number, letter in enumerate(letters, start=1):
+            product = letter.product
+            cover = self._instruction_sheet(case, letter, number, total)
+            packet_text = cover + "\f" + letter.body + "\f" + authorization
+            contract = product.contract_number or "no contract number"
+            header = (
+                f"Re: {product.product_type.value} -- Contract {contract} "
+                f"(mailing {number} of {total})"
+            )
+            packet_pdf = text_to_pdf(packet_text, header=header)
+
+            slug = _slug(letter.recipient_name)
+            packet_name = f"mailing-{number}-{slug}.pdf"
+            self._store_file(case_id, packet_name, packet_pdf)
             generated.append(
                 {
-                    "name": pdf_name,
-                    "kind": "letter",
-                    "description": f"Certified-mail letter to {letter.recipient_name}",
+                    "name": packet_name,
+                    "kind": "packet",
+                    "description": (
+                        f"Mailing {number} of {total}: "
+                        f"{product.product_type.value} to {letter.recipient_name}"
+                    ),
                 }
             )
 
-            admin = lookup(letter.product.administrator_name)
+            admin = lookup(product.administrator_name)
             if admin.email and admin.cancellation_route != CancellationRoute.DEALER:
-                eml_name = f"{base}.eml"
+                eml_name = f"mailing-{number}-{slug}.eml"
                 self._store_file(
                     case_id,
                     eml_name,
-                    self._email_draft(case, letter, admin, pdf_name, pdf_bytes),
+                    self._email_draft(case, letter, admin, packet_name, packet_pdf),
                 )
                 generated.append(
                     {
                         "name": eml_name,
                         "kind": "email",
-                        "description": f"Email draft to {admin.email}",
+                        "description": (
+                            f"Email draft to {admin.email} -- send in parallel "
+                            f"with mailing {number}"
+                        ),
                     }
                 )
-
-        auth_name = "authorization.pdf"
-        auth_text = generate_authorization(
-            case, service_name=self.service_name, service_contact=self.service_contact
-        )
-        self._store_file(case_id, auth_name, text_to_pdf(auth_text))
-        generated.append(
-            {
-                "name": auth_name,
-                "kind": "authorization",
-                "description": "Limited authorization for you to sign",
-            }
-        )
-
-        checklist_name = "mailing-checklist.txt"
-        checklist = self._checklist(case, letters)
-        self._store_file(case_id, checklist_name, checklist.encode("utf-8"))
-        generated.append(
-            {
-                "name": checklist_name,
-                "kind": "checklist",
-                "description": "Step-by-step certified-mail checklist",
-            }
-        )
 
         zip_name = "refund-packet.zip"
         self._store_file(
@@ -447,7 +447,7 @@ class RefundService:
             {
                 "name": zip_name,
                 "kind": "bundle",
-                "description": "Everything above, zipped",
+                "description": "Every mailing packet, zipped",
             }
         )
 
@@ -466,54 +466,79 @@ class RefundService:
         message["Subject"] = letter.subject
         message.set_content(
             letter.body
-            + "\n\nAttached: the cancellation request (PDF). Please also see "
-            "the enclosed bill of sale and signed authorization.\n"
+            + "\n\nAttached is my cancellation request and authorization (PDF). "
+            "I am also sending this request by USPS Certified Mail, with a copy "
+            "of the bill of sale enclosed.\n"
         )
         message.add_attachment(
             pdf_bytes, maintype="application", subtype="pdf", filename=pdf_name
         )
         return message.as_bytes()
 
-    def _checklist(self, case: RefundCase, letters: list) -> str:
-        lines = [
-            f"MAILING CHECKLIST -- Case {case.case_id}",
-            "",
-            f"Seller: {case.seller.legal_name}",
-            f"Vehicle: {case.vehicle.description}  (VIN {case.vehicle.vin})",
-            f"Sold: {case.sale_date.isoformat()}",
-            "",
-            f"You have {len(letters)} cancellation request(s) to send.",
-            "For EACH letter below:",
-            "",
-            "  [ ] Print the letter (PDF).",
-            "  [ ] Sign and date the authorization document. Have it notarized",
-            "      if the administrator requires it.",
-            "  [ ] Enclose: a copy of the bill of sale, the signed",
-            "      authorization, and a copy of the product contract.",
-            "  [ ] Mail it from USPS as Certified Mail, Return Receipt",
-            "      Requested. Keep the receipt and tracking number.",
-            "",
-            "LETTERS",
-            "-------",
-        ]
-        for index, letter in enumerate(letters, start=1):
-            lines.append(
-                f"{index}. {letter.recipient_name} -- "
-                f"{letter.product.product_type.value} "
-                f"(Contract {letter.product.contract_number or 'unknown'})"
-            )
-            for addr_line in letter.recipient_address_lines:
-                lines.append(f"     {addr_line}")
-            admin = lookup(letter.product.administrator_name)
-            if admin.email and admin.cancellation_route != CancellationRoute.DEALER:
-                lines.append(f"     A pre-filled email draft is also included.")
-            for warning in letter.warnings:
-                lines.append(f"     ! {warning}")
-            lines.append("")
-        lines.append(
-            "Keep every Certified Mail receipt and return card -- they are your"
+    def _instruction_sheet(
+        self, case: RefundCase, letter, number: int, total: int
+    ) -> str:
+        """The cover page that sits on top of one outbound mailing."""
+        product = letter.product
+        zip_match = re.search(
+            r"\b\d{5}(?:-\d{4})?\b", " ".join(case.seller.address_lines)
         )
-        lines.append("proof the request was sent and received.")
+
+        lines = [
+            f"MAILING {number} OF {total}",
+            "INSTRUCTION SHEET -- keep this page on top of the envelope",
+            "",
+            "WHAT THIS IS",
+            "  Your request to cancel one vehicle add-on product and claim a",
+            "  pro-rata refund, now that you have sold the vehicle.",
+            "",
+            f"    Product:   {product.product_type.value}",
+            f"    Provider:  {letter.recipient_name}",
+            f"    Contract:  {product.contract_number or '(not found -- see the letter)'}",
+            "",
+            "SEND THIS PACKET TO",
+        ]
+        for addr_line in [letter.recipient_name, *letter.recipient_address_lines]:
+            lines.append(f"    {addr_line}")
+        lines += [
+            "",
+            "HOW TO SEND IT",
+            "  Send it by USPS Certified Mail, Return Receipt Requested. That",
+            "  gives you dated proof that the provider received it.",
+            "",
+            "  Find your nearest Post Office at:",
+            "    https://tools.usps.com/find-location.htm",
+        ]
+        if zip_match:
+            lines.append(f"  (search your ZIP code: {zip_match.group(0)})")
+        lines += [
+            "",
+            "BEFORE YOU SEAL THE ENVELOPE",
+            "  [ ] Sign and date the authorization page in this packet.",
+            "  [ ] Enclose a copy of your bill of sale.",
+            f"  [ ] Enclose a copy of your {product.product_type.value} contract.",
+            "  [ ] Keep your Certified Mail receipt and the green return card.",
+            "",
+            "WHAT'S IN THIS PACKET",
+            "  1. This instruction sheet.",
+            "  2. The cancellation and pro-rata refund letter.",
+            "  3. The authorization for you to sign.",
+        ]
+
+        admin = lookup(product.administrator_name)
+        if admin.email and admin.cancellation_route != CancellationRoute.DEALER:
+            lines += [
+                "",
+                f"  Optional: a pre-filled email to {admin.email} is also",
+                "  included, so you can submit this request electronically in",
+                "  parallel. The certified mailing remains your proof of record.",
+            ]
+
+        if letter.warnings:
+            lines.append("")
+            lines.append("PLEASE CHECK")
+            for warning in letter.warnings:
+                lines.append(f"  ! {warning}")
         return "\n".join(lines) + "\n"
 
     def _zip(

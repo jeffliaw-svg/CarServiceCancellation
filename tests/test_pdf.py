@@ -32,6 +32,17 @@ def test_long_text_paginates():
     assert b"/Count 2" in data
 
 
+def test_form_feed_forces_a_page_break():
+    data = text_to_pdf("first section\fsecond section")
+    assert b"/Count 2" in data
+
+
+def test_header_and_page_footer_are_rendered():
+    data = text_to_pdf("body text", header="Re: Vehicle Service Contract")
+    assert b"Re: Vehicle Service Contract" in data
+    assert b"Page 1 of 1" in data
+
+
 def test_parentheses_and_backslashes_are_escaped():
     data = text_to_pdf("a (parenthetical) and a back\\slash")
     assert b"\\(" in data

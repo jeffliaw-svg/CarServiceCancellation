@@ -330,8 +330,8 @@ function StepDocuments({
       <div className="space-y-5 rounded-3xl border border-line bg-surface p-7">
         <FileRow
           title="Purchase contract"
-          hint="PDF or text. The document that itemizes your add-ons."
-          accept=".txt,.text,.pdf"
+          hint="A PDF, a photo, or a text file -- the document that itemizes your add-ons."
+          accept=".txt,.text,.pdf,.png,.jpg,.jpeg,.webp"
           fileName={contractName}
           onPick={uploadContractFile}
           busy={busy}
