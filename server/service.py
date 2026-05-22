@@ -249,6 +249,7 @@ class RefundService:
             ingest = self._ingest_contract(case, stored_path, filename, data)
             meta["parse_warnings"] = ingest["warnings"]
             meta["review"] = ingest["review"]
+            meta["review_detail"] = ingest.get("review_detail", {})
             meta["extraction_method"] = ingest["method"]
             self.cases.save(case)
 
@@ -346,12 +347,22 @@ class RefundService:
             for item in result.products
             if item.review_fields
         }
+        review_detail = {
+            item.product.product_type.value: item.field_candidates
+            for item in result.products
+            if item.field_candidates
+        }
         method = (
             "cross-checked by " + ", ".join(result.extractor_names)
             if result.extractor_names
             else "ensemble"
         )
-        return {"warnings": warnings, "review": review, "method": method}
+        return {
+            "warnings": warnings,
+            "review": review,
+            "review_detail": review_detail,
+            "method": method,
+        }
 
     # -- step 3: confirm services ----------------------------------------
 
@@ -665,6 +676,53 @@ class RefundService:
             "recent": recent[:50],
         }
 
+    _FIELD_ATTR = {"administrator": "administrator_name"}
+
+    @staticmethod
+    def _coerce_field(field: str, value: object) -> object:
+        """Coerce an operator-entered correction to the field's type."""
+        if field in ("price", "cancellation_fee"):
+            try:
+                text = str(value).replace("$", "").replace(",", "").strip()
+                return round(float(text), 2)
+            except (ValueError, TypeError):
+                return 0.0
+        if field in ("term_months", "term_miles"):
+            try:
+                return int(float(str(value).replace(",", "").strip()))
+            except (ValueError, TypeError):
+                return None
+        return str(value).strip()
+
+    def resolve_case(self, case_id: str, corrections: list[dict]) -> dict:
+        """Apply operator corrections to a flagged case and clear its review.
+
+        Each correction: {product_type, field, value}.
+        """
+        with self._lock:
+            case = self.cases.load(case_id)
+            by_type = {p.product_type.value: p for p in case.products}
+            for correction in corrections:
+                product = by_type.get(correction.get("product_type"))
+                field = correction.get("field")
+                if product is None or not field:
+                    continue
+                attr = self._FIELD_ATTR.get(field, field)
+                if not hasattr(product, attr):
+                    continue
+                setattr(product, attr, self._coerce_field(field, correction.get("value")))
+            self.cases.save(case)
+
+            meta = self._load_meta(case_id)
+            meta["review"] = {}
+            meta["review_detail"] = {}
+            meta["resolution"] = {
+                "resolved_at": datetime.now(timezone.utc).isoformat(),
+                "fields_corrected": len(corrections),
+            }
+            self._save_meta(case_id, meta)
+            return self._view(case)
+
     def _confirmation_text(
         self, product: AddOnProduct, estimate
     ) -> tuple[str, str]:
@@ -766,6 +824,8 @@ class RefundService:
             "total_estimated_refund": total_estimated_refund(case),
             "parse_warnings": meta.get("parse_warnings", []),
             "extraction_method": meta.get("extraction_method", ""),
+            "review_detail": meta.get("review_detail", {}),
+            "resolution": meta.get("resolution"),
             "rules_notes": state_notes(
                 _state_from_address(case.seller.address_lines) or ""
             ),

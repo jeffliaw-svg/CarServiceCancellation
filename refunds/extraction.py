@@ -124,6 +124,8 @@ class ReconciledProduct:
     product: AddOnProduct
     confidence: dict[str, str]      # field name -> HIGH | MEDIUM | LOW
     review_fields: list[str]        # fields the customer should double-check
+    # for each review field, the distinct readings and who produced them
+    field_candidates: dict[str, list] = field(default_factory=dict)
 
 
 @dataclass
@@ -483,42 +485,51 @@ def _reconcile_field(
     keyfn,
     members: list[tuple[str, ProductFields]],
     resolver: ConflictResolver,
-) -> tuple[object, str]:
-    """Return (chosen value, confidence) for one field of one product."""
-    values = []
-    for _source, fields in members:
+) -> tuple[object, str, list[dict]]:
+    """Return (chosen value, confidence, candidates) for one field.
+
+    `candidates` lists each distinct reading with the readers that
+    produced it -- the operator console uses it to resolve disputes.
+    """
+    pairs: list[tuple[str, object]] = []
+    for source, fields in members:
         normalized = normalizer(getattr(fields, field_name))
         if normalized is not None and normalized != "":
-            values.append(normalized)
+            pairs.append((source, normalized))
 
-    if not values:
+    if not pairs:
         # No reader reported this field. For a routinely-optional field
         # that is genuine absence; for a required field (e.g. the price)
         # it means every reader missed it -- flag it for the customer.
-        return None, (HIGH if field_name in _OPTIONAL_FIELDS else LOW)
+        return None, (HIGH if field_name in _OPTIONAL_FIELDS else LOW), []
 
-    groups: dict[object, list] = {}
-    for value in values:
-        groups.setdefault(keyfn(value), []).append(value)
+    groups: dict[object, list[tuple[str, object]]] = {}
+    for source, value in pairs:
+        groups.setdefault(keyfn(value), []).append((source, value))
+    candidates = [
+        {"value": group[0][1], "sources": [src for src, _ in group]}
+        for group in groups.values()
+    ]
+
     winner_key = max(groups, key=lambda key: len(groups[key]))
-    winner = groups[winner_key][0]
-    present = len(values)
+    winner = groups[winner_key][0][1]
+    present = len(pairs)
     agree = len(groups[winner_key])
 
     if present == 1:
-        return winner, LOW
+        return winner, LOW, candidates
     if agree == present:
-        return winner, HIGH
+        return winner, HIGH, candidates
     if agree * 2 > present:
-        return winner, MEDIUM
+        return winner, MEDIUM, candidates
 
     # Genuine disagreement -- send the distinct candidates to the resolver.
-    candidates = [group[0] for group in groups.values()]
-    verdict = resolver.resolve(path, product_type.value, field_name, candidates)
+    distinct = [group[0][1] for group in groups.values()]
+    verdict = resolver.resolve(path, product_type.value, field_name, distinct)
     resolved = normalizer(verdict.value)
     if resolved is None or resolved == "":
         resolved = winner
-    return resolved, (MEDIUM if verdict.confident else LOW)
+    return resolved, (MEDIUM if verdict.confident else LOW), candidates
 
 
 def _best_anchor(
@@ -628,13 +639,15 @@ def reconcile(
     for product_type, members in _cluster_products(succeeded):
         chosen: dict[str, object] = {}
         confidence: dict[str, str] = {}
+        candidates_by_field: dict[str, list] = {}
         for field_name, normalizer, keyfn in _FIELD_SPECS:
-            value, level = _reconcile_field(
+            value, level, candidates = _reconcile_field(
                 path, product_type, field_name, normalizer, keyfn,
                 members, resolver,
             )
             chosen[field_name] = value
             confidence[field_name] = level
+            candidates_by_field[field_name] = candidates
 
         reporting_sources = {source for source, _ in members}
         if total >= 2 and len(reporting_sources) * 2 <= total:
@@ -655,7 +668,10 @@ def reconcile(
             cancellation_fee=float(fee) if fee is not None else 0.0,
         )
         review = [name for name, level in confidence.items() if level == LOW]
-        products.append(ReconciledProduct(product, confidence, review))
+        field_candidates = {name: candidates_by_field[name] for name in review}
+        products.append(
+            ReconciledProduct(product, confidence, review, field_candidates)
+        )
 
     return EnsembleResult(
         products=products,

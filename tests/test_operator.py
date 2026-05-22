@@ -120,6 +120,56 @@ def test_needs_review_surfaces_flagged_cases():
     assert "price" in overview["needs_review"][0]["review"]["GAP Waiver"]
 
 
+def test_resolve_case_corrects_fields_and_clears_review():
+    from refunds.extraction import (
+        DocumentExtraction,
+        DocumentExtractor,
+        EnsembleExtractor,
+        ProductFields,
+    )
+
+    class _Stub(DocumentExtractor):
+        def __init__(self, name, price):
+            self.name = name
+            self.price = price
+
+        def extract(self, path):
+            return DocumentExtraction(
+                source=self.name,
+                products=[
+                    ProductFields(
+                        product_type="GAP Waiver",
+                        administrator="Zurich",
+                        contract_number="G1",
+                        price=self.price,
+                        term_months=72,
+                    )
+                ],
+                purchase_date="2023-03-15",
+            )
+
+    ensemble = EnsembleExtractor([_Stub("a", 900.0), _Stub("b", 950.0)])
+    service = RefundService(tempfile.mkdtemp(), ensemble=ensemble)
+    case_id = service.create_case(_INTAKE)["case_id"]
+    service.add_document(
+        case_id, filename="scan.pdf", data=b"%PDF-1.4 fake", kind="contract"
+    )
+
+    assert service.operator_overview()["totals"]["needs_review"] == 1
+    detail = service.operator_case(case_id)
+    assert detail["review_detail"]["GAP Waiver"]["price"]  # candidates present
+
+    view = service.resolve_case(
+        case_id,
+        [{"product_type": "GAP Waiver", "field": "price", "value": 920}],
+    )
+    assert view["products"][0]["price"] == 920.0
+
+    # The case has left the review queue and its review detail is cleared.
+    assert service.operator_overview()["totals"]["needs_review"] == 0
+    assert service.operator_case(case_id)["review_detail"] == {}
+
+
 def test_operator_case_returns_full_detail():
     service = _service()
     case_id = _with_documents(service)

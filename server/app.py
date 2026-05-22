@@ -164,8 +164,13 @@ class Handler(BaseHTTPRequestHandler):
         token = (params.get("token") or [None])[0]
         if token is None:
             token = self.headers.get("X-Case-Token")
+        # The operator key may arrive as a header (fetch) or a query
+        # parameter (an <iframe>/<img> loading an operator file).
+        op_key = (params.get("op_key") or [None])[0]
+        if op_key is None:
+            op_key = self.headers.get("X-Operator-Key")
         try:
-            if self._route(method, path, token):
+            if self._route(method, path, token, op_key):
                 return
             if method == "GET" and not path.startswith("/api"):
                 self._serve_static(path)
@@ -191,17 +196,18 @@ class Handler(BaseHTTPRequestHandler):
                 "required to start a claim."
             )
 
-    def _require_operator(self) -> None:
+    def _require_operator(self, op_key: str | None) -> None:
         """Gate on the operator console; disabled unless a key is set."""
         if not OPERATOR_KEY:
             raise AccessDenied(
                 "The operator console is not enabled on this server."
             )
-        provided = self.headers.get("X-Operator-Key", "")
-        if not provided or not secrets.compare_digest(provided, OPERATOR_KEY):
+        if not op_key or not secrets.compare_digest(op_key, OPERATOR_KEY):
             raise AccessDenied("Invalid operator key.")
 
-    def _route(self, method: str, path: str, token: str | None) -> bool:
+    def _route(
+        self, method: str, path: str, token: str | None, op_key: str | None
+    ) -> bool:
         if method == "GET" and path == "/api/health":
             self._send_json(200, {"ok": True})
             return True
@@ -212,14 +218,35 @@ class Handler(BaseHTTPRequestHandler):
             return True
 
         if method == "GET" and path == "/api/operator/overview":
-            self._require_operator()
+            self._require_operator(op_key)
             self._send_json(200, SERVICE.operator_overview())
             return True
 
         match = re.fullmatch(r"/api/operator/cases/([A-Za-z0-9]+)", path)
         if match and method == "GET":
-            self._require_operator()
+            self._require_operator(op_key)
             self._send_json(200, SERVICE.operator_case(match.group(1)))
+            return True
+
+        match = re.fullmatch(
+            r"/api/operator/cases/([A-Za-z0-9]+)/resolve", path
+        )
+        if match and method == "POST":
+            self._require_operator(op_key)
+            body = self._read_json()
+            view = SERVICE.resolve_case(
+                match.group(1), body.get("corrections") or []
+            )
+            self._send_json(200, view)
+            return True
+
+        match = re.fullmatch(
+            r"/api/operator/cases/([A-Za-z0-9]+)/files/([A-Za-z0-9._-]+)", path
+        )
+        if match and method == "GET":
+            self._require_operator(op_key)
+            data, content_type = SERVICE.get_file(match.group(1), match.group(2))
+            self._send_bytes(200, data, content_type)
             return True
 
         match = re.fullmatch(r"/api/cases/([A-Za-z0-9]+)", path)
