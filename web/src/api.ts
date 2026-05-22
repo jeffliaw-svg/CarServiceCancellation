@@ -1,4 +1,4 @@
-import type { CaseView } from "./types";
+import type { CaseView, OperatorOverview } from "./types";
 
 const BASE = (import.meta.env.VITE_API_URL as string | undefined) || "";
 
@@ -6,12 +6,14 @@ async function request<T>(
   path: string,
   init?: RequestInit,
   token?: string | null,
+  operatorKey?: string | null,
 ): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...((init?.headers as Record<string, string>) || {}),
   };
   if (token) headers["X-Case-Token"] = token;
+  if (operatorKey) headers["X-Operator-Key"] = operatorKey;
   const res = await fetch(`${BASE}${path}`, { ...init, headers });
   const data = await res.json().catch(() => ({}) as unknown);
   if (!res.ok) {
@@ -106,6 +108,22 @@ export const api = {
     const query = token ? `?token=${encodeURIComponent(token)}` : "";
     return `${BASE}/api/cases/${id}/files/${name}${query}`;
   },
+
+  operatorOverview: (operatorKey: string) =>
+    request<OperatorOverview>(
+      "/api/operator/overview",
+      undefined,
+      undefined,
+      operatorKey,
+    ),
+
+  operatorCase: (id: string, operatorKey: string) =>
+    request<CaseView>(
+      `/api/operator/cases/${id}`,
+      undefined,
+      undefined,
+      operatorKey,
+    ),
 };
 
 export function money(value: number): string {

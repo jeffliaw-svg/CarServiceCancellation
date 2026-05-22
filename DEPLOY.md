@@ -111,6 +111,24 @@ The access code already keeps strangers out — no code, no claim. For an
 extra lock, in Vercel go to your project -> **Settings** -> **Deployment
 Protection** and turn on password protection for the whole site.
 
+## The operator console (your private dashboard)
+
+There is a private dashboard for you, the operator, showing every case:
+the funnel, where customers abandon, the review queue, and how many
+letter packets were generated.
+
+To turn it on:
+
+1. On Render → `refundroute-api` → **Environment**, add a variable
+   **`REFUNDS_OPERATOR_KEY`** and set it to a strong secret phrase that
+   only you know. Save (Render restarts).
+2. Visit your **Website address with `/operator` on the end** — e.g.
+   `https://car-service-cancellation.vercel.app/operator`
+3. Enter that operator key. The dashboard opens.
+
+If `REFUNDS_OPERATOR_KEY` is left blank, the operator console is
+disabled completely — no one can open it.
+
 ## Making changes later
 
 You don't need to redo any of this. When new code is pushed, **Render
