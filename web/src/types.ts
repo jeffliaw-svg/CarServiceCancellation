@@ -88,6 +88,11 @@ export interface OperatorOverview {
   recent: OperatorRow[];
 }
 
+export interface Candidate {
+  value: string | number;
+  sources: string[];
+}
+
 export interface CaseView {
   case_id: string;
   // Returned only by createCase; the client keeps it to authorize
@@ -112,7 +117,15 @@ export interface CaseView {
   total_estimated_refund: number;
   parse_warnings: string[];
   extraction_method: string;
+  review_detail: Record<string, Record<string, Candidate[]>>;
+  resolution: { resolved_at: string; fields_corrected: number } | null;
   rules_notes: RuleNote[];
   documents: DocumentFile[];
   generated: GeneratedFile[];
+}
+
+export interface Correction {
+  product_type: string;
+  field: string;
+  value: string | number;
 }

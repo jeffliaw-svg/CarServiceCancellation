@@ -1,4 +1,4 @@
-import type { CaseView, OperatorOverview } from "./types";
+import type { CaseView, Correction, OperatorOverview } from "./types";
 
 const BASE = (import.meta.env.VITE_API_URL as string | undefined) || "";
 
@@ -124,6 +124,23 @@ export const api = {
       undefined,
       operatorKey,
     ),
+
+  operatorResolve: (
+    id: string,
+    operatorKey: string,
+    corrections: Correction[],
+  ) =>
+    request<CaseView>(
+      `/api/operator/cases/${id}/resolve`,
+      { method: "POST", body: JSON.stringify({ corrections }) },
+      undefined,
+      operatorKey,
+    ),
+
+  operatorFileUrl: (id: string, name: string, operatorKey: string) =>
+    `${BASE}/api/operator/cases/${id}/files/${name}?op_key=${encodeURIComponent(
+      operatorKey,
+    )}`,
 };
 
 export function money(value: number): string {

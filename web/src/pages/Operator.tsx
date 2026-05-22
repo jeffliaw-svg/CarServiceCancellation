@@ -1,9 +1,18 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
-import type { CaseView, OperatorOverview } from "../types";
+import type { CaseView, Candidate, OperatorOverview } from "../types";
 import { Logo } from "../components/site";
 
 const KEY_STORAGE = "refundroute_operator_key";
+
+const FIELD_LABEL: Record<string, string> = {
+  price: "Price",
+  contract_number: "Contract number",
+  administrator: "Administrator",
+  term_months: "Term (months)",
+  term_miles: "Term (miles)",
+  cancellation_fee: "Cancellation fee",
+};
 
 function money(value: number): string {
   return value.toLocaleString("en-US", {
@@ -21,6 +30,16 @@ function when(iso: string): string {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function formatValue(field: string, value: string | number): string {
+  if (field === "price" || field === "cancellation_fee") {
+    const n = typeof value === "number" ? value : Number(value);
+    if (Number.isFinite(n)) {
+      return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+    }
+  }
+  return String(value);
 }
 
 function reviewSummary(review: Record<string, string[]>): string {
@@ -61,98 +80,361 @@ function Fact({ label, value }: { label: string; value: string }) {
   );
 }
 
-function DetailOverlay({
-  view,
-  onClose,
+/* -- the contract viewer (left pane) ---------------------------------- */
+
+function ContractViewer({
+  url,
+  name,
 }: {
-  view: CaseView;
-  onClose: () => void;
+  url: string | null;
+  name?: string;
 }) {
-  const packets = view.generated.filter((g) => g.kind === "packet").length;
+  if (!url) {
+    return (
+      <div className="flex h-full items-center justify-center p-8 text-center text-sm text-muted">
+        No contract document is on file for this case.
+      </div>
+    );
+  }
+  const isImage = /\.(png|jpe?g|webp|gif)$/i.test(name || "");
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink/40 p-4 sm:p-10"
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-2xl rounded-3xl border border-line bg-surface p-7"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h3 className="font-display text-2xl">{view.seller.legal_name}</h3>
-            <p className="text-xs text-muted">
-              Case {view.case_id} · {view.status}
-            </p>
-          </div>
-          <button
-            className="btn btn-ghost !px-3 !py-1.5 !text-xs"
-            onClick={onClose}
-          >
-            Close
-          </button>
-        </div>
-
-        <dl className="mt-5 grid grid-cols-1 gap-x-8 text-sm sm:grid-cols-2">
-          <Fact label="Vehicle" value={view.vehicle.description} />
-          <Fact label="VIN" value={view.vehicle.vin} />
-          <Fact label="Sold" value={view.sale_date} />
-          <Fact label="Purchased" value={view.vehicle.purchase_date || "—"} />
-          <Fact label="Started" value={when(view.created_at)} />
-          <Fact label="Last activity" value={when(view.updated_at)} />
-        </dl>
-        {view.extraction_method && (
-          <p className="mt-3 text-xs text-muted">
-            Read by: {view.extraction_method}
-          </p>
-        )}
-
-        <h4 className="mt-6 text-sm font-semibold">
-          Products ({view.products.length})
-        </h4>
-        <div className="mt-2 space-y-2">
-          {view.products.map((p) => (
-            <div
-              key={p.index}
-              className="rounded-xl border border-line bg-paper p-3 text-sm"
-            >
-              <div className="flex items-center justify-between">
-                <span className="font-medium">{p.product_type}</span>
-                <span className="text-accent">
-                  {p.estimate.can_estimate
-                    ? money(p.estimate.net_refund)
-                    : "TBD"}
-                </span>
-              </div>
-              <p className="text-xs text-muted">
-                {p.administrator}
-                {p.contract_number ? ` · ${p.contract_number}` : ""}
-              </p>
-              {p.review_fields.length > 0 && (
-                <p className="mt-1 text-xs text-amber-700">
-                  Flagged for review: {p.review_fields.join(", ")}
-                </p>
-              )}
-            </div>
-          ))}
-        </div>
-
-        {packets > 0 && (
-          <p className="mt-4 text-sm text-muted">
-            {packets} mailing packet{packets === 1 ? "" : "s"} generated.
-          </p>
-        )}
-        {view.parse_warnings.length > 0 && (
-          <div className="mt-4 rounded-xl bg-sand px-4 py-3 text-xs text-muted">
-            {view.parse_warnings.map((w) => (
-              <p key={w}>· {w}</p>
-            ))}
-          </div>
+    <div className="flex h-full flex-col">
+      <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-2 text-xs text-muted">
+        <span className="truncate">{name || "Contract"}</span>
+        <a
+          href={url}
+          target="_blank"
+          rel="noreferrer"
+          className="shrink-0 font-medium text-accent hover:underline"
+        >
+          Open in new tab
+        </a>
+      </div>
+      <div className="flex-1 overflow-auto bg-paper">
+        {isImage ? (
+          <img src={url} alt="Customer contract" className="w-full" />
+        ) : (
+          <iframe src={url} title="Customer contract" className="h-full w-full" />
         )}
       </div>
     </div>
   );
 }
+
+/* -- one disputed field (right pane) ---------------------------------- */
+
+function FieldCard({
+  field,
+  candidates,
+  decision,
+  onDecide,
+}: {
+  field: string;
+  candidates: Candidate[];
+  decision: string | number | undefined;
+  onDecide: (value: string | number | undefined) => void;
+}) {
+  const [typing, setTyping] = useState(false);
+  const [typed, setTyped] = useState("");
+  const label = FIELD_LABEL[field] ?? field;
+
+  if (decision !== undefined) {
+    return (
+      <div className="rounded-xl border border-accent bg-accent-soft p-3">
+        <div className="flex items-center justify-between gap-3 text-sm">
+          <span>
+            <span className="text-accent">&#10003;</span> {label}:{" "}
+            <strong>{formatValue(field, decision)}</strong>
+          </span>
+          <button
+            className="shrink-0 text-xs font-medium text-accent hover:underline"
+            onClick={() => onDecide(undefined)}
+          >
+            Change
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-xl border border-amber-300 bg-amber-50 p-4">
+      <p className="text-sm font-medium">{label}</p>
+      <p className="text-xs text-amber-800">The readers disagreed.</p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {candidates.map((candidate, index) => (
+          <button
+            key={index}
+            onClick={() => onDecide(candidate.value)}
+            className="rounded-lg border border-line bg-surface px-3 py-2 text-left transition hover:border-accent"
+          >
+            <span className="text-sm font-medium">
+              {formatValue(field, candidate.value)}
+            </span>
+            <span className="block text-[11px] text-muted">
+              {candidate.sources.join(", ")}
+            </span>
+          </button>
+        ))}
+        {!typing && (
+          <button
+            onClick={() => setTyping(true)}
+            className="rounded-lg border border-dashed border-line px-3 py-2 text-sm text-muted transition hover:border-accent"
+          >
+            Type the correct value
+          </button>
+        )}
+      </div>
+      {typing && (
+        <div className="mt-3 flex gap-2">
+          <input
+            className="field"
+            autoFocus
+            value={typed}
+            onChange={(e) => setTyped(e.target.value)}
+            placeholder="Enter value from the contract"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && typed.trim()) onDecide(typed.trim());
+            }}
+          />
+          <button
+            className="btn btn-primary !py-2 !text-xs"
+            disabled={!typed.trim()}
+            onClick={() => onDecide(typed.trim())}
+          >
+            Set
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* -- read-only detail for an unflagged case --------------------------- */
+
+function ReadOnlyDetail({ view }: { view: CaseView }) {
+  const packets = view.generated.filter((g) => g.kind === "packet").length;
+  return (
+    <div>
+      <dl className="grid grid-cols-1 gap-x-8 text-sm">
+        <Fact label="Vehicle" value={view.vehicle.description} />
+        <Fact label="VIN" value={view.vehicle.vin} />
+        <Fact label="Sold" value={view.sale_date} />
+        <Fact label="Started" value={when(view.created_at)} />
+        <Fact label="Last activity" value={when(view.updated_at)} />
+      </dl>
+      <h4 className="mt-5 text-sm font-semibold">
+        Products ({view.products.length})
+      </h4>
+      <div className="mt-2 space-y-2">
+        {view.products.map((p) => (
+          <div
+            key={p.index}
+            className="rounded-xl border border-line bg-paper p-3 text-sm"
+          >
+            <div className="flex items-center justify-between">
+              <span className="font-medium">{p.product_type}</span>
+              <span className="text-accent">
+                {p.estimate.can_estimate ? money(p.estimate.net_refund) : "TBD"}
+              </span>
+            </div>
+            <p className="text-xs text-muted">
+              {p.administrator}
+              {p.contract_number ? ` · ${p.contract_number}` : ""}
+            </p>
+          </div>
+        ))}
+      </div>
+      {packets > 0 && (
+        <p className="mt-4 text-sm text-muted">
+          {packets} mailing packet{packets === 1 ? "" : "s"} generated.
+        </p>
+      )}
+      {view.resolution && (
+        <p className="mt-3 text-xs text-accent">
+          Resolved by the operator on {when(view.resolution.resolved_at)}.
+        </p>
+      )}
+    </div>
+  );
+}
+
+/* -- the case overlay (resolution or read-only) ----------------------- */
+
+function CaseOverlay({
+  view,
+  operatorKey,
+  onClose,
+  onResolved,
+}: {
+  view: CaseView;
+  operatorKey: string;
+  onClose: () => void;
+  onResolved: () => void;
+}) {
+  const flagged: { productType: string; field: string }[] = [];
+  for (const [productType, fields] of Object.entries(view.review_detail)) {
+    for (const field of Object.keys(fields)) {
+      flagged.push({ productType, field });
+    }
+  }
+  const isFlagged = flagged.length > 0;
+
+  const [decisions, setDecisions] = useState<Record<string, string | number>>(
+    {},
+  );
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const keyOf = (productType: string, field: string) =>
+    `${productType}::${field}`;
+  const resolvedCount = flagged.filter(
+    (f) => decisions[keyOf(f.productType, f.field)] !== undefined,
+  ).length;
+  const allResolved = isFlagged && resolvedCount === flagged.length;
+
+  function decide(
+    productType: string,
+    field: string,
+    value: string | number | undefined,
+  ) {
+    setDecisions((current) => {
+      const next = { ...current };
+      if (value === undefined) delete next[keyOf(productType, field)];
+      else next[keyOf(productType, field)] = value;
+      return next;
+    });
+  }
+
+  async function apply() {
+    setBusy(true);
+    setError(null);
+    try {
+      const corrections = flagged.map((f) => ({
+        product_type: f.productType,
+        field: f.field,
+        value: decisions[keyOf(f.productType, f.field)],
+      }));
+      await api.operatorResolve(view.case_id, operatorKey, corrections);
+      setDone(true);
+      setTimeout(onResolved, 1100);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not apply.");
+      setBusy(false);
+    }
+  }
+
+  const contractDoc = view.documents.find((d) => d.kind === "contract");
+  const contractUrl = contractDoc
+    ? api.operatorFileUrl(view.case_id, contractDoc.name, operatorKey)
+    : null;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink/40 p-3 sm:p-6"
+      onClick={onClose}
+    >
+      <div
+        className="flex w-full max-w-5xl flex-col overflow-hidden rounded-3xl border border-line bg-surface lg:h-[85vh] lg:flex-row"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="h-[42vh] border-b border-line lg:h-auto lg:w-7/12 lg:border-b-0 lg:border-r">
+          <ContractViewer url={contractUrl} name={contractDoc?.original_name} />
+        </div>
+
+        <div className="flex min-h-0 flex-1 flex-col lg:w-5/12">
+          <div className="flex items-start justify-between gap-3 border-b border-line p-5">
+            <div>
+              <h3 className="font-display text-xl">
+                {view.seller.legal_name}
+              </h3>
+              <p className="text-xs text-muted">
+                {isFlagged
+                  ? `${flagged.length} field${
+                      flagged.length === 1 ? "" : "s"
+                    } to resolve before this case is trusted`
+                  : `Case ${view.case_id} · ${view.status}`}
+              </p>
+            </div>
+            <button
+              className="btn btn-ghost !px-3 !py-1.5 !text-xs"
+              onClick={onClose}
+            >
+              Close
+            </button>
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-y-auto p-5">
+            {done ? (
+              <div className="flex h-full flex-col items-center justify-center text-center">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-accent text-xl text-white">
+                  &#10003;
+                </div>
+                <h4 className="font-display mt-4 text-xl">Case resolved.</h4>
+                <p className="mt-1 text-sm text-muted">
+                  {view.seller.legal_name}&rsquo;s case is corrected and back
+                  on track.
+                </p>
+              </div>
+            ) : isFlagged ? (
+              <div className="space-y-5">
+                {Object.entries(view.review_detail).map(
+                  ([productType, fields]) => (
+                    <div key={productType}>
+                      <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-muted">
+                        {productType}
+                      </p>
+                      <div className="space-y-2">
+                        {Object.entries(fields).map(([field, candidates]) => (
+                          <FieldCard
+                            key={field}
+                            field={field}
+                            candidates={candidates}
+                            decision={decisions[keyOf(productType, field)]}
+                            onDecide={(value) =>
+                              decide(productType, field, value)
+                            }
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ),
+                )}
+              </div>
+            ) : (
+              <ReadOnlyDetail view={view} />
+            )}
+          </div>
+
+          {isFlagged && !done && (
+            <div className="border-t border-line p-5">
+              {error && (
+                <p role="alert" className="mb-2 text-xs text-red-700">
+                  {error}
+                </p>
+              )}
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-xs text-muted">
+                  {resolvedCount} of {flagged.length} resolved
+                </span>
+                <button
+                  className="btn btn-primary !py-2 !text-sm"
+                  disabled={!allResolved || busy}
+                  onClick={apply}
+                >
+                  {busy ? "Applying…" : "Apply corrections"}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* -- gate ------------------------------------------------------------- */
 
 function Gate({
   value,
@@ -205,6 +487,8 @@ function Gate({
     </div>
   );
 }
+
+/* -- the console ------------------------------------------------------ */
 
 export default function Operator() {
   const [key, setKey] = useState(
@@ -348,34 +632,43 @@ export default function Operator() {
           </div>
         </section>
 
-        {overview.needs_review.length > 0 && (
-          <section className="mt-12">
-            <h2 className="font-display text-2xl">Needs review</h2>
-            <p className="mt-1 text-sm text-muted">
-              The document readers disagreed on these — check before the
-              letters are relied on.
-            </p>
-            <div className="mt-4 space-y-3">
-              {overview.needs_review.map((item) => (
-                <button
-                  key={item.case_id}
-                  onClick={() => openCase(item.case_id)}
-                  className="block w-full rounded-2xl border border-amber-300 bg-amber-50 p-4 text-left transition hover:border-amber-400"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-medium">{item.seller}</span>
-                    <span className="text-xs text-muted">
-                      {item.case_id} · {item.stage}
-                    </span>
-                  </div>
-                  <p className="mt-1 text-xs text-amber-800">
-                    {reviewSummary(item.review)}
-                  </p>
-                </button>
-              ))}
+        <section className="mt-12">
+          <h2 className="font-display text-2xl">Needs review</h2>
+          {overview.needs_review.length > 0 ? (
+            <>
+              <p className="mt-1 text-sm text-muted">
+                The document readers disagreed on these — open one to
+                resolve it.
+              </p>
+              <div className="mt-4 space-y-3">
+                {overview.needs_review.map((item) => (
+                  <button
+                    key={item.case_id}
+                    onClick={() => openCase(item.case_id)}
+                    className="block w-full rounded-2xl border border-amber-300 bg-amber-50 p-4 text-left transition hover:border-amber-400"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium">{item.seller}</span>
+                      <span className="text-xs text-muted">
+                        {item.case_id} · {item.stage}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs text-amber-800">
+                      {reviewSummary(item.review)}
+                    </p>
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : (
+            <div className="mt-4 rounded-2xl border border-line bg-surface p-8 text-center">
+              <p className="font-display text-xl">All clear.</p>
+              <p className="mt-1 text-sm text-muted">
+                No cases are waiting on a reader disagreement.
+              </p>
             </div>
-          </section>
-        )}
+          )}
+        </section>
 
         <section className="mt-12">
           <h2 className="font-display text-2xl">Recent submissions</h2>
@@ -421,7 +714,15 @@ export default function Operator() {
       </div>
 
       {detail && (
-        <DetailOverlay view={detail} onClose={() => setDetail(null)} />
+        <CaseOverlay
+          view={detail}
+          operatorKey={key}
+          onClose={() => setDetail(null)}
+          onResolved={() => {
+            setDetail(null);
+            load(key);
+          }}
+        />
       )}
     </div>
   );
