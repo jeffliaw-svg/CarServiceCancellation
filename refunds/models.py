@@ -10,8 +10,12 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime, timezone
 from enum import Enum
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 class ProductType(str, Enum):
@@ -117,3 +121,5 @@ class RefundCase:
     authorization_signed: bool = False
     status: CaseStatus = CaseStatus.INTAKE
     case_id: str = field(default_factory=lambda: uuid.uuid4().hex[:10])
+    created_at: str = field(default_factory=_now_iso)
+    updated_at: str = field(default_factory=_now_iso)

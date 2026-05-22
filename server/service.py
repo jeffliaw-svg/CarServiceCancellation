@@ -15,7 +15,7 @@ import re
 import secrets
 import threading
 import zipfile
-from datetime import date
+from datetime import date, datetime, timezone
 from email.message import EmailMessage
 
 from refunds import (
@@ -568,6 +568,103 @@ class RefundService:
     def get_case(self, case_id: str) -> dict:
         return self._view(self.cases.load(case_id))
 
+    # -- operator console -------------------------------------------------
+
+    _STAGES = (
+        "Started",
+        "Documents read",
+        "Services confirmed",
+        "Letters generated",
+    )
+
+    def _stage(self, case: RefundCase, meta: dict) -> int:
+        """How far a case got: 1 Started .. 4 Letters generated."""
+        if meta.get("generated"):
+            return 4
+        if case.status == CaseStatus.READY_TO_SEND:
+            return 3
+        if case.products:
+            return 2
+        return 1
+
+    def operator_case(self, case_id: str) -> dict:
+        """Full case detail for the operator (same shape as the customer view)."""
+        return self._view(self.cases.load(case_id))
+
+    def operator_overview(self) -> dict:
+        """Aggregate every case into the operator dashboard payload."""
+        rows: list[dict] = []
+        for case in self.cases.list_cases():
+            meta = self._load_meta(case.case_id)
+            stage = self._stage(case, meta)
+            packets = [
+                g for g in meta.get("generated", []) if g.get("kind") == "packet"
+            ]
+            rows.append(
+                {
+                    "case_id": case.case_id,
+                    "seller": case.seller.legal_name,
+                    "vehicle": case.vehicle.description,
+                    "vin": case.vehicle.vin,
+                    "stage": self._STAGES[stage - 1],
+                    "stage_num": stage,
+                    "products": len(case.products),
+                    "estimated_total": total_estimated_refund(case),
+                    "review": meta.get("review", {}),
+                    "packets": len(packets),
+                    "created_at": case.created_at,
+                    "updated_at": case.updated_at,
+                }
+            )
+
+        reached = [0, 0, 0, 0]
+        stalled = [0, 0, 0, 0]
+        for row in rows:
+            for index in range(row["stage_num"]):
+                reached[index] += 1
+            stalled[row["stage_num"] - 1] += 1
+
+        funnel = [
+            {
+                "stage": self._STAGES[index],
+                "reached": reached[index],
+                # cases sitting at this stage with nowhere further (an
+                # abandonment); the final stage is a completion, not a stall.
+                "stalled_here": stalled[index] if index < 3 else 0,
+            }
+            for index in range(4)
+        ]
+
+        needs_review = [
+            {
+                "case_id": row["case_id"],
+                "seller": row["seller"],
+                "stage": row["stage"],
+                "review": row["review"],
+                "created_at": row["created_at"],
+                "updated_at": row["updated_at"],
+            }
+            for row in rows
+            if row["review"]
+        ]
+
+        recent = sorted(rows, key=lambda r: r["created_at"], reverse=True)
+
+        return {
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "totals": {
+                "started": reached[0],
+                "documents_read": reached[1],
+                "services_confirmed": reached[2],
+                "letters_generated": reached[3],
+                "packets_generated": sum(row["packets"] for row in rows),
+                "needs_review": len(needs_review),
+            },
+            "funnel": funnel,
+            "needs_review": needs_review,
+            "recent": recent[:50],
+        }
+
     def _confirmation_text(
         self, product: AddOnProduct, estimate
     ) -> tuple[str, str]:
@@ -663,6 +760,8 @@ class RefundService:
                 ),
             },
             "sale_date": case.sale_date.isoformat(),
+            "created_at": case.created_at,
+            "updated_at": case.updated_at,
             "products": products,
             "total_estimated_refund": total_estimated_refund(case),
             "parse_warnings": meta.get("parse_warnings", []),

@@ -13,6 +13,7 @@ Environment variables:
     REFUNDS_WEB_DIST        built front-end to serve (optional, single-host)
     REFUNDS_ALLOWED_ORIGIN  browser origin allowed for CORS (split-host deploy)
     REFUNDS_ACCESS_CODE     closed-beta gate: required to start a new claim
+    REFUNDS_OPERATOR_KEY    enables the operator console; required to view it
     ANTHROPIC_API_KEY       enables Claude vision reading of scanned contracts
     GEMINI_API_KEY          adds Gemini as a second, cross-checking reader
 """
@@ -48,6 +49,7 @@ WEB_DIST = os.path.abspath(
 )
 ALLOWED_ORIGIN = os.environ.get("REFUNDS_ALLOWED_ORIGIN", "")
 ACCESS_CODE = os.environ.get("REFUNDS_ACCESS_CODE", "")
+OPERATOR_KEY = os.environ.get("REFUNDS_OPERATOR_KEY", "")
 MAX_BODY_BYTES = 25 * 1024 * 1024
 
 SERVICE = RefundService(DATA_DIR)
@@ -94,7 +96,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header(
             "Access-Control-Allow-Headers",
-            "Content-Type, X-Case-Token, X-Access-Code",
+            "Content-Type, X-Case-Token, X-Access-Code, X-Operator-Key",
         )
 
     def _send_json(self, status: int, payload: dict) -> None:
@@ -189,6 +191,16 @@ class Handler(BaseHTTPRequestHandler):
                 "required to start a claim."
             )
 
+    def _require_operator(self) -> None:
+        """Gate on the operator console; disabled unless a key is set."""
+        if not OPERATOR_KEY:
+            raise AccessDenied(
+                "The operator console is not enabled on this server."
+            )
+        provided = self.headers.get("X-Operator-Key", "")
+        if not provided or not secrets.compare_digest(provided, OPERATOR_KEY):
+            raise AccessDenied("Invalid operator key.")
+
     def _route(self, method: str, path: str, token: str | None) -> bool:
         if method == "GET" and path == "/api/health":
             self._send_json(200, {"ok": True})
@@ -197,6 +209,17 @@ class Handler(BaseHTTPRequestHandler):
         if method == "POST" and path == "/api/cases":
             self._require_access_code()
             self._send_json(200, SERVICE.create_case(self._read_json()))
+            return True
+
+        if method == "GET" and path == "/api/operator/overview":
+            self._require_operator()
+            self._send_json(200, SERVICE.operator_overview())
+            return True
+
+        match = re.fullmatch(r"/api/operator/cases/([A-Za-z0-9]+)", path)
+        if match and method == "GET":
+            self._require_operator()
+            self._send_json(200, SERVICE.operator_case(match.group(1)))
             return True
 
         match = re.fullmatch(r"/api/cases/([A-Za-z0-9]+)", path)

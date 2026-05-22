@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import os
 import re
-from datetime import date
+from datetime import date, datetime, timezone
 
 from .models import (
     AddOnProduct,
@@ -112,6 +112,8 @@ def case_to_dict(case: RefundCase) -> dict:
         "status": case.status.value,
         "sale_date": _date_to_str(case.sale_date),
         "authorization_signed": case.authorization_signed,
+        "created_at": case.created_at,
+        "updated_at": case.updated_at,
         "seller": seller_to_dict(case.seller),
         "vehicle": vehicle_to_dict(case.vehicle),
         "products": [product_to_dict(p) for p in case.products],
@@ -119,7 +121,7 @@ def case_to_dict(case: RefundCase) -> dict:
 
 
 def case_from_dict(data: dict) -> RefundCase:
-    return RefundCase(
+    case = RefundCase(
         seller=seller_from_dict(data["seller"]),
         vehicle=vehicle_from_dict(data["vehicle"]),
         sale_date=_str_to_date(data["sale_date"]),
@@ -128,6 +130,11 @@ def case_from_dict(data: dict) -> RefundCase:
         status=CaseStatus(data.get("status", CaseStatus.INTAKE.value)),
         case_id=data["case_id"],
     )
+    if data.get("created_at"):
+        case.created_at = data["created_at"]
+    if data.get("updated_at"):
+        case.updated_at = data["updated_at"]
+    return case
 
 
 class CaseStore:
@@ -152,6 +159,7 @@ class CaseStore:
 
     def save(self, case: RefundCase) -> str:
         path = self.path_for(case.case_id)
+        case.updated_at = datetime.now(timezone.utc).isoformat()
         # Atomic + private: a concurrent reader never sees a partial file.
         tmp = f"{path}.{os.getpid()}.tmp"
         with open(tmp, "w", encoding="utf-8") as handle:
