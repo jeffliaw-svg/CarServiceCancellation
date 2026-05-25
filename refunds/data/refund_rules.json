@@ -35,12 +35,268 @@
     }
   },
   "states": {
-    "_comment": "Per-state statutory overrides and notes. Each entry is {topic, rule, source, reviewed_on}. An empty reviewed_on means the entry has NOT been confirmed by a human and must not be relied on or shown to customers. Populate this section from primary sources (state statutes and insurance-department regulations) with legal input.",
-    "IL": [
+    "_comment": "Per-state statutory overrides and notes. Each entry is {topic, rule, source, reviewed_on}. An empty reviewed_on means the entry has NOT been confirmed by a lawyer and must not be relied on or shown to customers; state_notes() filters them out. Entries below were drafted from primary sources by a research pass and require legal review before they appear in the product. GAP and VSC are regulated under different chapters in most states. The breach-of-written-contract SOLs are general civil deadlines and may not be the exact controlling deadline against an administrator -- UDAP / insurance / consumer-credit statutes can apply.",
+    "CA": [
       {
         "topic": "GAP refund on early termination",
-        "rule": "<<RESEARCH: confirm Illinois' GAP cancellation and refund rule, and cite the statute or regulation>>",
-        "source": "",
+        "rule": "Under Cal. Civ. Code section 2982.12, a GAP waiver may be cancelled by the buyer at any time without penalty; cancellation within 30 days of purchase entitles the buyer to a full refund of the GAP charge plus the finance charge attributable to it; cancellation after 30 days entitles the buyer to a pro-rata refund of the unearned GAP charge. The holder must tender (or instruct the administrator to tender) the refund within 60 business days after termination of the GAP waiver. No cancellation, termination, or similar fee may be charged. (Effective Jan. 1, 2023.)",
+        "source": "https://law.justia.com/codes/california/code-civ/division-3/part-4/title-14/chapter-2b/section-2982-12/",
+        "reviewed_on": ""
+      },
+      {
+        "topic": "Statute of limitations - breach of written contract",
+        "rule": "Cal. Code Civ. Proc. section 337: four years from breach for an action on a written contract. May not be the controlling deadline if a more specific consumer-protection or insurance statute applies.",
+        "source": "https://selfhelp.courts.ca.gov/civil-lawsuit/statute-limitations",
+        "reviewed_on": ""
+      }
+    ],
+    "TX": [
+      {
+        "topic": "GAP / debt-cancellation agreement refund",
+        "rule": "Tex. Fin. Code section 354.007: on cancellation of a debt-cancellation (GAP) agreement on a retail vehicle installment contract, the holder or administrator must refund or credit the unearned portion of the fee. The refund is computed from the earliest of prepayment in full, acceleration, the buyer's cancellation request, or total denial of a claim under a section 354.003 exclusion. No refund is required if the calculated amount is under $5.",
+        "source": "https://statutes.capitol.texas.gov/Docs/FI/htm/FI.354.htm",
+        "reviewed_on": ""
+      },
+      {
+        "topic": "Vehicle service contract refund and cancellation",
+        "rule": "Tex. Occ. Code Chapter 1304 (esp. section 1304.1581): cancellation within 30 days entitles the holder to a full refund less claims paid and a cancellation fee capped at $50; after 30 days, a pro-rata refund (by time, mileage, or other disclosed measure) less claims paid and the $50 cap. A provider that fails to pay or credit the refund within 45 days of receiving the cancellation notice is liable for a statutory penalty.",
+        "source": "https://statutes.capitol.texas.gov/Docs/OC/htm/OC.1304.htm",
+        "reviewed_on": ""
+      },
+      {
+        "topic": "Statute of limitations - breach of written contract",
+        "rule": "Tex. Civ. Prac. & Rem. Code section 16.051 (residual four-year SOL): four years from breach for a written-contract action. A more specific statute may control against an administrator.",
+        "source": "https://www.superlawyers.com/resources/contracts/how-long-do-i-have-to-file-my-breach-of-contract-lawsuit/",
+        "reviewed_on": ""
+      }
+    ],
+    "FL": [
+      {
+        "topic": "Vehicle service contract / service agreement refund",
+        "rule": "Fla. Stat. section 634.121: a service agreement is cancelable by the purchaser within 60 days of purchase for 100% of the gross premium less claims paid (a reasonable administrative fee up to 5% of the gross premium is permitted). After 60 days, the insurer or service-agreement company must return at least 90% of the unearned pro-rata premium less claims paid directly to the agreement holder.",
+        "source": "https://www.leg.state.fl.us/statutes/index.cfm?App_mode=Display_Statute&Search_String=&URL=0600-0699/0634/Sections/0634.121.html",
+        "reviewed_on": ""
+      },
+      {
+        "topic": "Statute of limitations - breach of written contract",
+        "rule": "Fla. Stat. section 95.11(2)(b): five years to bring an action on a written contract. A more specific statute may control against an administrator.",
+        "source": "https://www.nolo.com/legal-encyclopedia/statute-of-limitations-state-laws-chart-29941.html",
+        "reviewed_on": ""
+      }
+    ],
+    "NY": [
+      {
+        "topic": "GAP waiver / GAP insurance cancellation",
+        "rule": "N.Y. Ins. Law section 3427 governs cancellation, renewal, and other provisions of GAP insurance issued in New York; cancellation or termination of the contractual-liability or other insurance policy does not reduce the insurer's responsibility for GAP waivers for which premium has been received, and any cancellation refund may be applied by the creditor as a reduction of the finance balance unless the consumer can show the loan is paid in full.",
+        "source": "https://law.justia.com/codes/new-york/isc/article-34/3427/",
+        "reviewed_on": ""
+      },
+      {
+        "topic": "Statute of limitations - breach of written contract",
+        "rule": "N.Y. C.P.L.R. section 213(2): six years for an action upon a contractual obligation or liability, written or oral.",
+        "source": "https://www.nolo.com/legal-encyclopedia/statute-of-limitations-state-laws-chart-29941.html",
+        "reviewed_on": ""
+      }
+    ],
+    "IL": [
+      {
+        "topic": "Vehicle service contract refund and cancellation",
+        "rule": "215 ILCS 152/35 (Service Contract Act): a service contract may be cancelled within 30 days of purchase for a full refund if no service was provided (less the cancellation fee); thereafter, a pro-rata refund based on elapsed months, miles, hours, or other disclosed measure, less the value of any service received and the cancellation fee. Cancellation fee is capped at the lesser of 10% of the contract price or $50. If the provider fails to refund, the reimbursement insurer is responsible.",
+        "source": "https://ilga.gov/legislation/ilcs/documents/021501520K35.htm",
+        "reviewed_on": ""
+      },
+      {
+        "topic": "Statute of limitations - breach of written contract",
+        "rule": "735 ILCS 5/13-206: ten years from the date of breach to bring an action on a written contract. A more specific statute may control against an administrator.",
+        "source": "https://malawillinois.com/illinois-breach-of-contract-deadlines-written-vs-oral-agreements/",
+        "reviewed_on": ""
+      }
+    ],
+    "OH": [
+      {
+        "topic": "GAP / debt-cancellation product on retail installment contracts",
+        "rule": "Ohio Rev. Code section 1317.05 treats GAP waivers and similar debt-cancellation/suspension products as part of the retail installment contract (and not as insurance); the charge must be disclosed in writing and credit cannot be conditioned on purchase of the product. The statute itself does not set a numeric refund deadline -- the contract terms and any applicable consumer-credit regulation control the refund mechanics.",
+        "source": "https://codes.ohio.gov/ohio-revised-code/section-1317.05",
+        "reviewed_on": ""
+      },
+      {
+        "topic": "Statute of limitations - breach of written contract",
+        "rule": "Ohio Rev. Code section 2305.06 (as amended 2021): six years from accrual to sue on a written contract. A more specific statute may control against an administrator.",
+        "source": "https://codes.ohio.gov/ohio-revised-code/section-2305.06",
+        "reviewed_on": ""
+      }
+    ],
+    "GA": [
+      {
+        "topic": "GAP waiver requirements",
+        "rule": "O.C.G.A. Chapter 33-63 and Ga. Comp. R. & Regs. 120-2-102 govern guaranteed asset protection waivers in Georgia, including disclosure, free-look, and refund requirements; the regulation requires that the methodology for calculating any refund of unearned charges be disclosed in the waiver.",
+        "source": "https://rules.sos.ga.gov/gac/120-2-102",
+        "reviewed_on": ""
+      },
+      {
+        "topic": "Statute of limitations - breach of written contract",
+        "rule": "O.C.G.A. section 9-3-24: six years to bring an action on a simple written contract (from the date the contract becomes due and payable).",
+        "source": "https://www.superlawyers.com/resources/contracts/how-long-do-i-have-to-file-my-breach-of-contract-lawsuit/",
+        "reviewed_on": ""
+      }
+    ],
+    "NC": [
+      {
+        "topic": "GAP waiver cancellation and refund",
+        "rule": "N.C. Gen. Stat. Chapter 66, Article 46 (Guaranteed Asset Protection Waivers): cancellation within the free-look period entitles the borrower to a full refund (assuming no benefits paid); after the free-look period, a refund of the unearned portion may be due. To receive a refund on early termination of the underlying finance agreement, the borrower must submit a written cancellation request to the creditor, administrator, or other party within 90 days of the terminating event. The creditor may apply the refund as a reduction of the loan balance unless the consumer shows the loan is paid in full.",
+        "source": "https://www.ncleg.gov/EnactedLegislation/Statutes/PDF/ByArticle/Chapter_66/Article_46.pdf",
+        "reviewed_on": ""
+      },
+      {
+        "topic": "Statute of limitations - breach of written contract",
+        "rule": "N.C. Gen. Stat. section 1-52: three years for breach of contract (written or oral) under North Carolina law, generally from the date of breach.",
+        "source": "https://www.biazzolaw.com/post/what-is-the-statute-of-limitations-for-breach-of-contract-in-north-carolina",
+        "reviewed_on": ""
+      }
+    ],
+    "MI": [
+      {
+        "topic": "Statute of limitations - breach of written contract",
+        "rule": "Mich. Comp. Laws section 600.5807(9): six years to bring an action on a written or oral contract. (Michigan does not yet have a freestanding GAP-waiver act on the scale of the NCOIL model -- GAP is regulated through the Motor Vehicle Sales Finance Act and related provisions; confirm the controlling rule with counsel.)",
+        "source": "https://www.statutechecker.com/limitations/michigan/breach-of-contract-written",
+        "reviewed_on": ""
+      }
+    ],
+    "NJ": [
+      {
+        "topic": "GAP waiver cancellation and refund deadline",
+        "rule": "N.J.S.A. 17:16BB-6: a refund due on cancellation or early termination of a GAP waiver must be paid within 60 days of the event terminating the finance agreement (no consumer request required) or within 60 days of receipt of the borrower's cancellation. To receive a refund on early termination after the free-look period, the borrower must submit a written cancellation request within 90 days of the terminating event. Free-look cancellation: full refund. Post-free-look cancellation: pro-rata refund less a cancellation fee no greater than $50.",
+        "source": "https://law.justia.com/codes/new-jersey/title-17/section-17-16bb-6/",
+        "reviewed_on": ""
+      }
+    ],
+    "VA": [
+      {
+        "topic": "GAP waiver cancellation and refund",
+        "rule": "Va. Code section 38.2-6404: the free-look period must be at least 30 days, with a full refund of the purchase price if no benefits have been provided. After the free-look period, the borrower may be entitled to a refund of any unearned portion of the purchase price (unless the waiver expressly provides otherwise); any cancellation refund may be applied by the creditor as a reduction of the loan balance unless the borrower can show the loan is paid in full.",
+        "source": "https://law.lis.virginia.gov/vacode/title38.2/chapter64/section38.2-6404/",
+        "reviewed_on": ""
+      },
+      {
+        "topic": "Statute of limitations - breach of written contract",
+        "rule": "Va. Code section 8.01-246(2): five years to bring an action on a written contract.",
+        "source": "https://www.nolo.com/legal-encyclopedia/statute-of-limitations-state-laws-chart-29941.html",
+        "reviewed_on": ""
+      }
+    ],
+    "WA": [
+      {
+        "topic": "GAP waiver cancellation and refund",
+        "rule": "Wash. Rev. Code Chapter 48.160 (and WAC 284-160): GAP waivers must afford a free-look period in which the borrower is entitled to a full refund if no benefits have been provided; cancellation or early termination of the finance agreement after the free-look period may entitle the borrower to a refund of any unearned portion of the purchase price unless the waiver provides otherwise.",
+        "source": "https://app.leg.wa.gov/rcw/default.aspx?cite=48.160&full=true",
+        "reviewed_on": ""
+      },
+      {
+        "topic": "Statute of limitations - breach of written contract",
+        "rule": "Wash. Rev. Code section 4.16.040(1): six years to bring an action on a written contract.",
+        "source": "https://www.nolo.com/legal-encyclopedia/statute-of-limitations-state-laws-chart-29941.html",
+        "reviewed_on": ""
+      }
+    ],
+    "AZ": [
+      {
+        "topic": "Statute of limitations - breach of written contract",
+        "rule": "Ariz. Rev. Stat. section 12-548: six years to bring an action on a contract in writing executed in Arizona (some practitioners cite a five-year general written-contract SOL; confirm the applicable subsection).",
+        "source": "https://www.nolo.com/legal-encyclopedia/statute-of-limitations-state-laws-chart-29941.html",
+        "reviewed_on": ""
+      }
+    ],
+    "MA": [
+      {
+        "topic": "GAP waiver cancellation - no cancellation fee on financed GAP",
+        "rule": "The Massachusetts Division of Banks has issued guidance concluding that on facts as described, charging a cancellation fee on a financed GAP waiver is not permissible. Massachusetts debt-waiver rules generally provide for a free-look full refund and a pro-rata refund (less a cancellation fee up to $75, where allowed) thereafter; the Attorney General has pursued enforcement actions involving GAP refund practices.",
+        "source": "https://www.mass.gov/opinion/permissibility-of-charging-a-gap-waiver-cancellation-fee-on-facts-as-described",
+        "reviewed_on": ""
+      },
+      {
+        "topic": "Statute of limitations - breach of written contract",
+        "rule": "Mass. Gen. Laws ch. 260, section 2: six years to bring an action on a contract (written or oral).",
+        "source": "https://www.nolo.com/legal-encyclopedia/statute-of-limitations-state-laws-chart-29941.html",
+        "reviewed_on": ""
+      }
+    ],
+    "TN": [
+      {
+        "topic": "GAP waiver cancellation and refund",
+        "rule": "Tenn. Code Ann. section 56-59-106: free-look cancellation entitles the borrower to a full refund (subject to claim/benefit conditions). On cancellation or early termination of the finance agreement after the free-look period, the borrower must submit a written cancellation request to the creditor, administrator, or other party within 90 days of the borrower's decision to cancel to receive a refund of the unearned portion of the purchase price. Any refund may be applied to reduce the loan balance unless the borrower shows the loan is paid in full.",
+        "source": "https://law.justia.com/codes/tennessee/title-56/chapter-59/section-56-59-106/",
+        "reviewed_on": ""
+      },
+      {
+        "topic": "Statute of limitations - breach of written contract",
+        "rule": "Tenn. Code Ann. section 28-3-109: six years to bring an action on a contract not otherwise expressly provided for.",
+        "source": "https://www.nolo.com/legal-encyclopedia/statute-of-limitations-state-laws-chart-29941.html",
+        "reviewed_on": ""
+      }
+    ],
+    "IN": [
+      {
+        "topic": "GAP refund on early payoff or cancellation",
+        "rule": "Ind. Code section 24-4.5-2-202 / 24-4.5-3-202 (Uniform Consumer Credit Code): where the GAP charge exceeds $400, the consumer has the right to cancel and obtain a refund of the unearned GAP charge before prepayment in full, and the consumer must be given specific cancellation instructions. The refund must be calculated using a method no less favorable to the consumer than pro-rata, and the seller (or its assignee) is responsible for making a timely refund.",
+        "source": "https://law.justia.com/codes/indiana/title-24/article-4-5/chapter-3/section-24-4-5-3-202/",
+        "reviewed_on": ""
+      },
+      {
+        "topic": "Statute of limitations - breach of written contract",
+        "rule": "Ind. Code section 34-11-2-9: six years for a written contract for the payment of money (and ten years for other written contracts under section 34-11-2-11).",
+        "source": "https://www.nolo.com/legal-encyclopedia/statute-of-limitations-state-laws-chart-29941.html",
+        "reviewed_on": ""
+      }
+    ],
+    "MO": [
+      {
+        "topic": "GAP refund on early termination",
+        "rule": "Mo. Rev. Stat. section 408.380: a debtor may cancel a deficiency-waiver addendum, GAP, or similar product within 15 days of purchase for a complete refund or credit (pro-rata method). The product must provide that on termination prior to the scheduled maturity date of the indebtedness, any refund of an amount paid by the debtor must be paid or credited promptly.",
+        "source": "https://revisor.mo.gov/main/OneSection.aspx?section=408.380",
+        "reviewed_on": ""
+      },
+      {
+        "topic": "Statute of limitations - breach of written contract",
+        "rule": "Mo. Rev. Stat. section 516.110: ten years to bring an action upon a writing for the payment of money or property.",
+        "source": "https://www.nolo.com/legal-encyclopedia/statute-of-limitations-state-laws-chart-29941.html",
+        "reviewed_on": ""
+      }
+    ],
+    "MD": [
+      {
+        "topic": "GAP waiver / motor vehicle financial protection product cancellation",
+        "rule": "Maryland's motor-vehicle financial-protection-product (GAP-waiver) rules require a free-look period of at least 30 days with a full refund if no benefits have been provided, disclosure of the refund methodology for the unearned purchase price, and a 90-day window from the event terminating the finance agreement for the borrower to submit a written cancellation request.",
+        "source": "https://insurance.maryland.gov/documents/newscenter/newsreleases/releases2011-2013/gap_insurance.pdf",
+        "reviewed_on": ""
+      }
+    ],
+    "WI": [
+      {
+        "topic": "GAP waiver cancellation - no cancellation fee, pro-rata-or-better refund",
+        "rule": "Wis. Stat. section 218.0148: no cancellation, termination, or similar fee may be assessed in connection with the cancellation or termination of a GAP waiver. When a GAP waiver terminates before its scheduled expiration and no claim has been paid, the customer is entitled to a refund or credit of the unearned portion of the GAP charge. For cancellation later than 30 days after purchase, the refund must be calculated by a method no less favorable to the borrower than the Rule of 78. The creditor must make or instruct an appropriate refund or credit.",
+        "source": "https://dfi.wi.gov/Pages/FinancialServices/LicensedFinancial/GAPComplianceInformationForDealers.aspx",
+        "reviewed_on": ""
+      },
+      {
+        "topic": "Statute of limitations - breach of written contract",
+        "rule": "Wis. Stat. section 893.43: six years to bring an action upon a contract.",
+        "source": "https://www.nolo.com/legal-encyclopedia/statute-of-limitations-state-laws-chart-29941.html",
+        "reviewed_on": ""
+      }
+    ],
+    "CO": [
+      {
+        "topic": "GAP refund timing on assignee-held loans",
+        "rule": "Colo. Rev. Stat. section 5-9.3-106 (effective Jan. 1, 2024, per HB 23-1181): on cancellation, the original creditor must provide the unearned GAP fee to the consumer within 30 days of receiving notice from the assignee; if the original creditor has not done so within 30 days, the assignee must provide the refund to the consumer, and the original creditor or GAP administrator must reimburse the assignee within 45 days of receiving notice. The 2024 framework also limits any cancellation fee.",
+        "source": "https://law.justia.com/codes/colorado/title-5/consumer-credit-code/article-9-3/section-5-9-3-106/",
+        "reviewed_on": ""
+      }
+    ],
+    "MN": [
+      {
+        "topic": "GAP waiver cancellation and refund",
+        "rule": "Minn. Stat. Chapter 59D (section 59D.07): cancellation within the free-look period entitles the borrower to a full refund (no benefits paid); thereafter, the borrower may be entitled to a refund of any unearned portion of the purchase price unless the waiver provides otherwise. The borrower must submit a written cancellation request to the creditor, administrator, or other party.",
+        "source": "https://www.revisor.mn.gov/statutes/cite/59D.07",
         "reviewed_on": ""
       }
     ]
