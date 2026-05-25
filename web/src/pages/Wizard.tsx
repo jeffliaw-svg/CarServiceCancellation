@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Link } from "react-router-dom";
+import { QRCodeSVG } from "qrcode.react";
 import { api, moneyExact, type Intake } from "../api";
 import type { CaseView } from "../types";
 import { Logo } from "../components/site";
@@ -283,6 +284,7 @@ function FileRow({
   fileName,
   onPick,
   busy,
+  allowCamera,
 }: {
   title: string;
   hint: string;
@@ -290,33 +292,129 @@ function FileRow({
   fileName?: string;
   onPick: (file: File) => void;
   busy: boolean;
+  allowCamera?: boolean;
 }) {
+  const [dragging, setDragging] = useState(false);
+  const cameraRef = useRef<HTMLInputElement | null>(null);
+
   return (
-    <label
-      className={`file-row flex cursor-pointer items-center justify-between gap-4 rounded-2xl border border-dashed border-line bg-paper px-5 py-4 transition hover:border-accent ${
-        busy ? "pointer-events-none opacity-60" : ""
-      }`}
-    >
-      <div>
-        <p className="font-medium">{title}</p>
-        <p className="text-xs text-muted">{fileName ? `Selected: ${fileName}` : hint}</p>
-      </div>
-      <span className="btn btn-ghost !px-4 !py-2 !text-xs" aria-hidden="true">
-        {fileName ? "Replace" : "Choose file"}
-      </span>
-      <input
-        type="file"
-        accept={accept}
-        aria-label={title}
-        className="file-input"
-        onChange={(e) => {
-          const file = e.target.files?.[0];
+    <div>
+      <label
+        className={`file-row flex cursor-pointer items-center justify-between gap-4 rounded-2xl border-2 border-dashed bg-paper px-5 py-4 transition ${
+          dragging
+            ? "border-accent bg-accent-soft"
+            : "border-line hover:border-accent"
+        } ${busy ? "pointer-events-none opacity-60" : ""}`}
+        onDragOver={(e) => {
+          e.preventDefault();
+          if (!dragging) setDragging(true);
+        }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragging(false);
+          const file = e.dataTransfer.files?.[0];
           if (file) onPick(file);
         }}
-      />
-    </label>
+      >
+        <div>
+          <p className="font-medium">{title}</p>
+          <p className="text-xs text-muted">
+            {fileName ? `Selected: ${fileName}` : `${hint} Drop a file here or click to choose.`}
+          </p>
+        </div>
+        <span className="btn btn-ghost !px-4 !py-2 !text-xs" aria-hidden="true">
+          {fileName ? "Replace" : "Choose file"}
+        </span>
+        <input
+          type="file"
+          accept={accept}
+          aria-label={title}
+          className="file-input"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) onPick(file);
+          }}
+        />
+      </label>
+      {allowCamera && (
+        <div className="mt-2">
+          <button
+            type="button"
+            disabled={busy}
+            className="inline-flex items-center gap-1.5 text-xs font-medium text-accent hover:underline disabled:opacity-50"
+            onClick={() => cameraRef.current?.click()}
+          >
+            <span aria-hidden="true">📷</span> Take a photo instead
+          </button>
+          <input
+            ref={cameraRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            aria-label={`Take a photo of ${title}`}
+            className="file-input"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) onPick(file);
+            }}
+          />
+        </div>
+      )}
+    </div>
   );
 }
+
+function PhoneHandoff({
+  caseId,
+  token,
+  step,
+}: {
+  caseId: string;
+  token: string | null;
+  step: number;
+}) {
+  const [open, setOpen] = useState(false);
+  if (!token) return null;
+  const url = `${window.location.origin}/start?resume=${encodeURIComponent(
+    `${caseId}.${token}.${step}`,
+  )}`;
+  return (
+    <div className="rounded-2xl border border-line bg-paper px-5 py-4">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <p className="font-medium">On a laptop? Switch to your phone.</p>
+          <p className="text-xs text-muted">
+            Use your phone's camera to snap the contract, then come back here.
+          </p>
+        </div>
+        <button
+          type="button"
+          className="btn btn-ghost !px-4 !py-2 !text-xs"
+          onClick={() => setOpen((value) => !value)}
+        >
+          {open ? "Hide" : "Show QR code"}
+        </button>
+      </div>
+      {open && (
+        <div className="mt-4 flex flex-col items-center gap-4 sm:flex-row sm:items-start">
+          <div className="rounded-xl border border-line bg-surface p-3">
+            <QRCodeSVG value={url} size={156} />
+          </div>
+          <div className="text-xs text-muted sm:max-w-xs">
+            <p className="font-medium text-ink">Scan with your phone camera.</p>
+            <p className="mt-1">
+              You will land on the same step with your case ready to go. Keep
+              this code on your own screen -- anyone who scans it could resume
+              your case.
+            </p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 
 function StepDocuments({
   view,
@@ -379,6 +477,7 @@ function StepDocuments({
           fileName={contractName}
           onPick={uploadContractFile}
           busy={busy}
+          allowCamera
         />
         <div className="text-center">
           <button
@@ -414,7 +513,10 @@ function StepDocuments({
           fileName={billName}
           onPick={uploadBill}
           busy={busy}
+          allowCamera
         />
+
+        <PhoneHandoff caseId={view.case_id} token={token} step={2} />
 
         {view.parse_warnings.length > 0 && (
           <div className="rounded-xl bg-sand px-4 py-3 text-xs text-muted">
@@ -727,15 +829,40 @@ export default function Wizard() {
   const [token, setToken] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [resuming, setResuming] = useState(
-    () => !!localStorage.getItem(STORAGE_KEY),
-  );
+  const [resuming, setResuming] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return (
+      !!localStorage.getItem(STORAGE_KEY) ||
+      new URLSearchParams(window.location.search).has("resume")
+    );
+  });
 
-  // Resume a case in progress after a refresh, a closed tab, or the back
-  // button. Case id + token + step are persisted to localStorage.
+  // Resume a case after a refresh, a closed tab, the back button, or a
+  // phone-handoff QR scan (URL "?resume=caseId.token.step"). Both paths
+  // converge on the same localStorage record.
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const resumeParam = params.get("resume");
+    if (resumeParam) {
+      const [caseId, tok, stepStr] = resumeParam.split(".");
+      if (caseId && tok) {
+        localStorage.setItem(
+          STORAGE_KEY,
+          JSON.stringify({
+            caseId,
+            token: tok,
+            step: parseInt(stepStr || "2", 10) || 2,
+          }),
+        );
+        window.history.replaceState({}, "", "/start");
+      }
+    }
+
     const saved = localStorage.getItem(STORAGE_KEY);
-    if (!saved) return;
+    if (!saved) {
+      setResuming(false);
+      return;
+    }
     let cancelled = false;
     (async () => {
       try {
