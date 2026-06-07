@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { api } from "../api";
 import type { CaseView, Candidate, OperatorOverview } from "../types";
 import { Logo } from "../components/site";
@@ -287,6 +287,52 @@ function CaseOverlay({
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const titleId = useId();
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const previouslyFocused = useRef<HTMLElement | null>(null);
+
+  // Trap focus inside the dialog, return focus on close, and close on
+  // Escape. Without this screen readers don't announce the modal and
+  // keyboard users can tab into the operator console behind it.
+  useEffect(() => {
+    previouslyFocused.current = document.activeElement as HTMLElement | null;
+    const t = window.setTimeout(() => closeButtonRef.current?.focus(), 30);
+
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        onClose();
+        return;
+      }
+      if (e.key !== "Tab" || !dialogRef.current) return;
+      const focusable = dialogRef.current.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      );
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement as HTMLElement | null;
+      if (e.shiftKey && active === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+
+    document.addEventListener("keydown", onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+      window.clearTimeout(t);
+      previouslyFocused.current?.focus?.();
+    };
+  }, [onClose]);
+
   const keyOf = (productType: string, field: string) =>
     `${productType}::${field}`;
   const resolvedCount = flagged.filter(
@@ -336,6 +382,10 @@ function CaseOverlay({
       onClick={onClose}
     >
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
         className="flex w-full max-w-5xl flex-col overflow-hidden rounded-3xl border border-line bg-surface lg:h-[85vh] lg:flex-row"
         onClick={(e) => e.stopPropagation()}
       >
@@ -346,7 +396,7 @@ function CaseOverlay({
         <div className="flex min-h-0 flex-1 flex-col lg:w-5/12">
           <div className="flex items-start justify-between gap-3 border-b border-line p-5">
             <div>
-              <h3 className="font-display text-xl">
+              <h3 id={titleId} className="font-display text-xl">
                 {view.seller.legal_name}
               </h3>
               <p className="text-xs text-muted">
@@ -358,7 +408,9 @@ function CaseOverlay({
               </p>
             </div>
             <button
-              className="btn btn-ghost !px-3 !py-1.5 !text-xs"
+              ref={closeButtonRef}
+              className="btn btn-ghost min-h-11 !px-3 !py-1.5 !text-xs"
+              aria-label="Close case overlay"
               onClick={onClose}
             >
               Close
@@ -552,6 +604,9 @@ export default function Operator() {
 
   return (
     <div className="min-h-screen">
+      <a href="#operator-main" className="skip-link">
+        Skip to main content
+      </a>
       <header className="border-b border-line bg-surface">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
           <div className="flex items-center gap-3">
@@ -560,19 +615,22 @@ export default function Operator() {
           </div>
           <div className="flex items-center gap-4 text-xs font-medium">
             <button
-              className="text-muted hover:text-ink"
+              className="min-h-11 px-2 text-muted hover:text-ink"
               onClick={() => load(key)}
             >
               Refresh
             </button>
-            <button className="text-muted hover:text-ink" onClick={signOut}>
+            <button
+              className="min-h-11 px-2 text-muted hover:text-ink"
+              onClick={signOut}
+            >
               Sign out
             </button>
           </div>
         </div>
       </header>
 
-      <div className="mx-auto max-w-5xl px-6 py-10">
+      <main id="operator-main" className="mx-auto max-w-5xl px-6 py-10">
         {error && (
           <div
             role="alert"
@@ -711,7 +769,7 @@ export default function Operator() {
         <p className="mt-10 text-center text-xs text-muted">
           Updated {when(overview.generated_at)}
         </p>
-      </div>
+      </main>
 
       {detail && (
         <CaseOverlay

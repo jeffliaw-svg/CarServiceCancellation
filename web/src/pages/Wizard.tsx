@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Link } from "react-router-dom";
 import { QRCodeSVG } from "qrcode.react";
@@ -14,6 +14,8 @@ const STEP_LABELS = [
   "Confirm services",
   "Your letters",
 ];
+
+const HEADING_ID = "wizard-heading";
 
 const FIELD_LABEL: Record<string, string> = {
   price: "the price",
@@ -38,42 +40,63 @@ interface StepProps {
 
 /* ------------------------------------------------------------------ */
 
-function Stepper({ step }: { step: number }) {
+function Stepper({
+  step,
+  onNavigate,
+}: {
+  step: number;
+  onNavigate: (n: number) => void;
+}) {
   return (
-    <div className="flex items-center">
+    <nav aria-label="Wizard progress" className="flex items-center">
       {STEP_LABELS.map((label, i) => {
         const n = i + 1;
         const done = n < step;
         const current = n === step;
+        const dotClass = `flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${
+          done
+            ? "bg-accent text-white"
+            : current
+              ? "bg-ink text-white"
+              : "bg-sand text-muted"
+        }`;
+        const labelClass = `hidden text-sm sm:block ${
+          current ? "font-medium text-ink" : "text-muted"
+        }`;
         return (
           <div key={label} className="flex items-center">
-            <div className="flex items-center gap-2">
+            {done ? (
+              <button
+                type="button"
+                onClick={() => onNavigate(n)}
+                className="group flex items-center gap-2 rounded-full focus:outline-none"
+                aria-label={`Go back to step ${n}: ${label}`}
+              >
+                <span
+                  className={`${dotClass} transition group-hover:bg-accent-deep`}
+                >
+                  ✓
+                </span>
+                <span className={`${labelClass} group-hover:text-ink`}>
+                  {label}
+                </span>
+              </button>
+            ) : (
               <div
-                className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${
-                  done
-                    ? "bg-accent text-white"
-                    : current
-                      ? "bg-ink text-white"
-                      : "bg-sand text-muted"
-                }`}
+                className="flex items-center gap-2"
+                aria-current={current ? "step" : undefined}
               >
-                {done ? "✓" : n}
+                <div className={dotClass}>{n}</div>
+                <span className={labelClass}>{label}</span>
               </div>
-              <span
-                className={`hidden text-sm sm:block ${
-                  current ? "font-medium text-ink" : "text-muted"
-                }`}
-              >
-                {label}
-              </span>
-            </div>
+            )}
             {n < STEP_LABELS.length && (
-              <div className="mx-3 h-px w-5 bg-line sm:w-8" />
+              <div className="mx-3 h-px w-5 bg-line sm:w-8" aria-hidden="true" />
             )}
           </div>
         );
       })}
-    </div>
+    </nav>
   );
 }
 
@@ -103,15 +126,30 @@ function Heading({ kicker, title, lead }: { kicker: string; title: string; lead:
       <p className="text-xs font-semibold uppercase tracking-widest text-accent">
         {kicker}
       </p>
-      <h1 className="font-display mt-2 text-3xl md:text-4xl">{title}</h1>
+      <h1
+        id={HEADING_ID}
+        tabIndex={-1}
+        className="font-display mt-2 text-3xl outline-none md:text-4xl"
+      >
+        {title}
+      </h1>
       <p className="mt-3 max-w-xl text-muted">{lead}</p>
     </div>
   );
 }
 
-function Label({ children }: { children: React.ReactNode }) {
+function Label({
+  htmlFor,
+  children,
+}: {
+  htmlFor?: string;
+  children: React.ReactNode;
+}) {
   return (
-    <label className="mb-1.5 block text-sm font-medium text-ink">
+    <label
+      htmlFor={htmlFor}
+      className="mb-1.5 block text-sm font-medium text-ink"
+    >
       {children}
     </label>
   );
@@ -129,6 +167,14 @@ function StepIntake({ advance, guard, busy }: StepProps) {
   const [accessCode, setAccessCode] = useState(
     () => localStorage.getItem("refundroute_access_code") || "",
   );
+
+  const codeId = useId();
+  const nameId = useId();
+  const addrId = useId();
+  const emailId = useId();
+  const phoneId = useId();
+  const vinId = useId();
+  const dateId = useId();
 
   const ready =
     legalName.trim() && address.trim() && vin.trim() && saleDate.trim();
@@ -184,8 +230,9 @@ function StepIntake({ advance, guard, busy }: StepProps) {
       <div className="rounded-3xl border border-line bg-surface p-7">
         <div className="grid gap-5">
           <div>
-            <Label>Access code</Label>
+            <Label htmlFor={codeId}>Access code</Label>
             <input
+              id={codeId}
               className="field"
               value={accessCode}
               onChange={(e) => setAccessCode(e.target.value)}
@@ -197,22 +244,28 @@ function StepIntake({ advance, guard, busy }: StepProps) {
             </p>
           </div>
           <div>
-            <Label>Your full legal name</Label>
+            <Label htmlFor={nameId}>Your full legal name</Label>
             <input
+              id={nameId}
               className="field"
               value={legalName}
               onChange={(e) => setLegalName(e.target.value)}
               placeholder="As it appears on the contract"
+              autoComplete="name"
+              aria-required="true"
             />
           </div>
           <div>
-            <Label>Mailing address</Label>
+            <Label htmlFor={addrId}>Mailing address</Label>
             <textarea
+              id={addrId}
               className="field"
               rows={2}
               value={address}
               onChange={(e) => setAddress(e.target.value)}
               placeholder={"Street address\nCity, State ZIP"}
+              autoComplete="street-address"
+              aria-required="true"
             />
             <p className="mt-1.5 text-xs text-muted">
               Refund checks will be mailed here.
@@ -220,45 +273,56 @@ function StepIntake({ advance, guard, busy }: StepProps) {
           </div>
           <div className="grid gap-5 sm:grid-cols-2">
             <div>
-              <Label>Email (optional)</Label>
+              <Label htmlFor={emailId}>Email (optional)</Label>
               <input
+                id={emailId}
                 className="field"
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@example.com"
+                autoComplete="email"
               />
             </div>
             <div>
-              <Label>Phone (optional)</Label>
+              <Label htmlFor={phoneId}>Phone (optional)</Label>
               <input
+                id={phoneId}
                 className="field"
+                type="tel"
+                inputMode="numeric"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
                 placeholder="(555) 010-2345"
+                autoComplete="tel"
               />
             </div>
           </div>
           <div className="grid gap-5 sm:grid-cols-2">
             <div>
-              <Label>Vehicle VIN</Label>
+              <Label htmlFor={vinId}>Vehicle VIN</Label>
               <input
+                id={vinId}
                 className="field"
                 value={vin}
                 onChange={(e) => setVin(e.target.value.toUpperCase())}
                 placeholder="1HGCM82633A004352"
+                autoComplete="off"
+                aria-required="true"
               />
               <p className="mt-1.5 text-xs text-muted">
                 The 17-character number on your contract and registration.
               </p>
             </div>
             <div>
-              <Label>Date you sold the vehicle</Label>
+              <Label htmlFor={dateId}>Date you sold the vehicle</Label>
               <input
+                id={dateId}
                 className="field"
                 type="date"
                 value={saleDate}
                 onChange={(e) => setSaleDate(e.target.value)}
+                aria-required="true"
               />
             </div>
           </div>
@@ -562,6 +626,8 @@ function StepConfirm({ view, token, advance, guard, busy }: StepProps) {
       ? view.products.map((p) => (p.review_fields.length === 0 ? true : null))
       : [],
   );
+  const cardRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const [pulsingIndex, setPulsingIndex] = useState<number | null>(null);
   if (!view) return null;
 
   const decide = (index: number, value: boolean) =>
@@ -578,8 +644,28 @@ function StepConfirm({ view, token, advance, guard, busy }: StepProps) {
   );
   const keptCount = decisions.filter((d) => d === true).length;
   const undecided = decisions.some((d) => d === null);
+  const submitDisabled = undecided || keptCount === 0 || busy;
+
+  function scrollToFirstUndecided() {
+    const idx = decisions.findIndex((d) => d === null);
+    if (idx < 0) return;
+    const reduce =
+      typeof window !== "undefined" &&
+      window.matchMedia &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    cardRefs.current[idx]?.scrollIntoView({
+      behavior: reduce ? "auto" : "smooth",
+      block: "center",
+    });
+    setPulsingIndex(idx);
+    window.setTimeout(() => setPulsingIndex(null), 1300);
+  }
 
   async function submit() {
+    if (submitDisabled) {
+      if (undecided) scrollToFirstUndecided();
+      return;
+    }
     const keep = view!.products
       .filter((_, i) => decisions[i] === true)
       .map((p) => p.index);
@@ -618,7 +704,12 @@ function StepConfirm({ view, token, advance, guard, busy }: StepProps) {
           return (
             <div
               key={p.index}
-              className={`rounded-2xl border bg-surface p-6 transition ${border}`}
+              ref={(el) => {
+                cardRefs.current[i] = el;
+              }}
+              className={`rounded-2xl border bg-surface p-6 transition ${border} ${
+                pulsingIndex === i ? "pulse-amber" : ""
+              }`}
             >
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div className="max-w-xl">
@@ -630,7 +721,7 @@ function StepConfirm({ view, token, advance, guard, busy }: StepProps) {
                   <p className="mt-3 text-[15px] font-medium leading-relaxed text-ink">
                     {p.headline}
                   </p>
-                  <details className="group mt-2">
+                  <details open className="group mt-2">
                     <summary className="text-xs font-medium text-accent hover:underline">
                       How we estimated this
                       <span className="ml-1 inline-block transition-transform group-open:rotate-90">
@@ -655,20 +746,18 @@ function StepConfirm({ view, token, advance, guard, busy }: StepProps) {
               </div>
               {p.review_fields.length > 0 && (
                 <div className="mt-4 rounded-xl bg-amber-50 px-4 py-3 text-xs text-amber-800">
-                  Our document readers didn&rsquo;t fully agree on{" "}
+                  We weren&rsquo;t 100% sure on{" "}
                   <strong>{p.review_fields.map(fieldLabel).join(", ")}</strong>{" "}
-                  for this product. Please double-check{" "}
-                  {p.review_fields.length === 1 ? "it" : "them"} against your
-                  paperwork before confirming.
+                  for this product — please check your paperwork and confirm.
                 </div>
               )}
               <div
-                className="mt-5 flex items-center gap-2"
+                className="mt-5 flex flex-wrap items-center gap-3"
                 role="group"
                 aria-label={`Is the ${p.product_type} yours?`}
               >
                 <button
-                  className={`btn !py-2 !text-xs ${
+                  className={`btn min-h-11 !py-2.5 !text-xs ${
                     decision === true ? "btn-primary" : "btn-ghost"
                   }`}
                   aria-pressed={decision === true}
@@ -678,14 +767,15 @@ function StepConfirm({ view, token, advance, guard, busy }: StepProps) {
                   {decision === true ? "✓ Confirmed" : "Yes, this is mine"}
                 </button>
                 <button
-                  className={`btn !py-2 !text-xs ${
-                    decision === false ? "btn-primary" : "btn-ghost"
+                  type="button"
+                  className={`min-h-11 px-2 py-2 text-xs font-medium underline-offset-2 hover:underline ${
+                    decision === false ? "text-ink" : "text-muted"
                   }`}
                   aria-pressed={decision === false}
                   aria-label={`No, the ${p.product_type} is not mine`}
                   onClick={() => decide(i, false)}
                 >
-                  Not mine
+                  {decision === false ? "✓ Not mine" : "Not mine"}
                 </button>
                 {decision === null && (
                   <span className="text-xs font-medium text-amber-700">
@@ -698,7 +788,7 @@ function StepConfirm({ view, token, advance, guard, busy }: StepProps) {
         })}
       </div>
 
-      <div className="mt-6 flex flex-wrap items-center justify-between gap-4 rounded-2xl bg-ink px-6 py-5 text-paper">
+      <div className="sticky bottom-0 z-10 mt-6 flex flex-wrap items-center justify-between gap-4 rounded-2xl bg-ink px-6 py-5 text-paper shadow-[0_-12px_30px_-20px_rgba(20,17,15,0.5)]">
         <div>
           <p className="text-xs uppercase tracking-widest text-paper/60">
             Estimated total across {keptCount} confirmed service
@@ -707,8 +797,8 @@ function StepConfirm({ view, token, advance, guard, busy }: StepProps) {
           <p className="font-display text-3xl">{moneyExact(total)}</p>
         </div>
         <button
-          className="btn btn-light"
-          disabled={undecided || keptCount === 0 || busy}
+          className={`btn btn-light ${submitDisabled ? "opacity-60" : ""}`}
+          aria-disabled={submitDisabled}
           onClick={submit}
         >
           {busy
@@ -829,6 +919,7 @@ export default function Wizard() {
   const [token, setToken] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const errorRef = useRef<HTMLDivElement | null>(null);
   const [resuming, setResuming] = useState(() => {
     if (typeof window === "undefined") return false;
     return (
@@ -913,16 +1004,53 @@ export default function Wizard() {
     setView(v);
     if (v.access_token) setToken(v.access_token);
     setStep(next);
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    const reduce =
+      typeof window !== "undefined" &&
+      window.matchMedia &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    window.scrollTo({ top: 0, behavior: reduce ? "auto" : "smooth" });
+  }
+
+  function navigateBack(target: number) {
+    if (target >= step) return;
+    setStep(target);
   }
 
   function startOver() {
+    if (view && !window.confirm("Discard this claim and start over?")) return;
     localStorage.removeItem(STORAGE_KEY);
     setView(null);
     setToken(null);
     setStep(1);
     setError(null);
   }
+
+  // After a step change, move keyboard focus to the new heading so screen
+  // readers announce the step and so Tab order picks up from the top of
+  // the new panel.
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      const h = document.getElementById(HEADING_ID) as HTMLElement | null;
+      h?.focus({ preventScroll: true });
+    }, 60);
+    return () => window.clearTimeout(t);
+  }, [step]);
+
+  // When a fetch fails after a Continue tap, the error banner can sit
+  // above the fold on mobile and the page looks frozen. Scroll it into
+  // view and move focus so screen readers announce it.
+  useEffect(() => {
+    if (!error) return;
+    const reduce =
+      typeof window !== "undefined" &&
+      window.matchMedia &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    errorRef.current?.scrollIntoView({
+      behavior: reduce ? "auto" : "smooth",
+      block: "center",
+    });
+    errorRef.current?.focus();
+  }, [error]);
 
   const stepProps: StepProps = { view, token, setView, advance, guard, busy };
 
@@ -936,15 +1064,18 @@ export default function Wizard() {
 
   return (
     <div className="min-h-screen">
+      <a href="#wizard-main" className="skip-link">
+        Skip to main content
+      </a>
       <header className="border-b border-line bg-surface">
         <div className="mx-auto flex max-w-3xl items-center justify-between px-6 py-4">
           <Logo />
           {view ? (
             <button
-              className="text-xs font-medium text-muted hover:text-ink"
+              className="min-h-11 px-2 text-xs font-medium text-muted hover:text-ink"
               onClick={startOver}
             >
-              Start over
+              Discard and restart
             </button>
           ) : (
             <span className="text-xs text-muted">Secure refund workup</span>
@@ -952,15 +1083,24 @@ export default function Wizard() {
         </div>
       </header>
 
-      <div className="mx-auto max-w-3xl px-6 py-10">
-        <div className="mb-10 flex justify-center">
-          <Stepper step={step} />
+      <main id="wizard-main" className="mx-auto max-w-3xl px-6 py-10">
+        <div className="mb-3 flex justify-center">
+          <Stepper step={step} onNavigate={navigateBack} />
+        </div>
+        <p className="mb-8 text-center text-xs font-medium text-muted sm:hidden">
+          Step {step} of {STEP_LABELS.length} — {STEP_LABELS[step - 1]}
+        </p>
+
+        <div aria-live="polite" aria-atomic="true" className="sr-only">
+          Step {step} of {STEP_LABELS.length}: {STEP_LABELS[step - 1]}
         </div>
 
         {error && (
           <div
+            ref={errorRef}
+            tabIndex={-1}
             role="alert"
-            className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+            className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 outline-none"
           >
             {error}
           </div>
@@ -972,7 +1112,7 @@ export default function Wizard() {
           {step === 3 && <StepConfirm key="s3" {...stepProps} />}
           {step === 4 && <StepGenerate key="s4" {...stepProps} />}
         </AnimatePresence>
-      </div>
+      </main>
     </div>
   );
 }

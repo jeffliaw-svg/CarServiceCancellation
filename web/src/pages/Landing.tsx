@@ -142,8 +142,12 @@ function EstimateCard() {
 export default function Landing() {
   return (
     <div className="overflow-x-hidden">
+      <a href="#main" className="skip-link">
+        Skip to main content
+      </a>
       <Nav />
 
+      <main id="main">
       {/* Hero */}
       <section className="relative px-6 pb-24 pt-36 md:pt-44">
         <div
@@ -392,6 +396,8 @@ export default function Landing() {
           </div>
         </Reveal>
       </section>
+
+      </main>
 
       <Footer />
     </div>
