@@ -186,6 +186,47 @@ def test_two_products_of_the_same_type_stay_separate():
     ]
 
 
+def test_same_form_seen_twice_by_one_reader_collapses_to_one_product():
+    # Dealer PDFs frequently bundle customer + dealer + lender copies of
+    # the same one-page form, so the LLM emits the same tire warranty
+    # twice. They share product type, price, contract number, and term --
+    # so we collapse them, both within one reader and across the ensemble.
+    twice = [
+        ProductFields(
+            product_type="Tire & Wheel", administrator="SafeGuard",
+            contract_number="TW-9", price=899.0, term_months=60, term_miles=60000,
+        ),
+        ProductFields(
+            product_type="Tire & Wheel", administrator="SafeGuard",
+            contract_number="TW-9", price=899.0, term_months=60, term_miles=60000,
+        ),
+    ]
+    result = reconcile(
+        "d.pdf", [_doc("r1", twice), _doc("r2", twice)], NullConflictResolver()
+    )
+    assert len(result.products) == 1
+    assert result.products[0].product.contract_number == "TW-9"
+
+
+def test_same_form_seen_twice_without_contract_number_still_collapses():
+    # A reader may copy the form without picking up the contract number
+    # on every page. The price-plus-term signature still catches it.
+    twice = [
+        ProductFields(
+            product_type="Tire & Wheel", administrator="SafeGuard",
+            contract_number="", price=899.0, term_months=60, term_miles=60000,
+        ),
+        ProductFields(
+            product_type="Tire & Wheel", administrator="SafeGuard",
+            contract_number="", price=899.0, term_months=60, term_miles=60000,
+        ),
+    ]
+    result = reconcile(
+        "d.pdf", [_doc("r1", twice), _doc("r2", twice)], NullConflictResolver()
+    )
+    assert len(result.products) == 1
+
+
 def test_missing_required_field_is_flagged_for_review():
     pf = ProductFields(
         product_type="GAP Waiver", administrator="Zurich",

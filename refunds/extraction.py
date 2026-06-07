@@ -53,7 +53,11 @@ _EXTRACTION_PROMPT = (
     + "]}\n"
     "Include every optional add-on / F&I product line: service contracts, "
     "GAP, tire & wheel, prepaid maintenance, appearance protection, key "
-    "replacement, theft protection, and so on. For cancellation_fee, give "
+    "replacement, theft protection, and so on. Dealer paperwork often "
+    "contains multiple copies of the SAME form -- customer copy, dealer "
+    "copy, lender copy, with identical form numbers and identical figures. "
+    "Return each product only ONCE, even when its form appears on several "
+    "pages. For cancellation_fee, give "
     "the cancellation or administrative fee only if the document states "
     "one. Copy figures exactly as printed. Use null where a value is "
     "genuinely absent. Do not guess."
@@ -69,6 +73,9 @@ _EXTRACTION_PROMPT_ALT = (
     '{"vin": string|null, "purchase_date": "YYYY-MM-DD"|null, "products": ['
     + _PRODUCT_SHAPE
     + "]}\n"
+    "Important: dealer PDFs are often padded with duplicate copies of the "
+    "same one-page form (customer / dealer / lender). If you see the same "
+    "form number, price, and term twice, list that product only once. "
     "Transcribe every figure exactly as it appears; use null when something "
     "is not stated."
 )
@@ -579,6 +586,49 @@ def _split_same_type(
     return buckets
 
 
+def _dedupe_within_reader(
+    products: list[ProductFields],
+) -> list[ProductFields]:
+    """Collapse same-form-twice readings from a single reader.
+
+    Dealer PDFs frequently bundle the customer / dealer / lender copies of
+    the same one-page form, so an LLM looking at every page emits the same
+    product two or three times. We treat two of one reader's products as
+    the same physical form when their classified type plus their price
+    match AND either their contract number matches OR their term in
+    months and miles match -- a deliberately conservative signature, so
+    two genuinely distinct products of the same type (different contract
+    numbers AND different terms) are still kept apart.
+    """
+
+    def round_price(value: float | None) -> float | None:
+        return round(value, 2) if value is not None else None
+
+    def norm(text: str) -> str:
+        return re.sub(r"\s+", "", text or "").upper()
+
+    kept: list[ProductFields] = []
+    seen_keys: list[tuple] = []
+    for fields in products:
+        product_type = classify_product_type(fields.product_type or "")
+        price = round_price(fields.price)
+        contract = norm(fields.contract_number)
+        key_a = (product_type, contract, price) if contract else None
+        key_b = (
+            (product_type, fields.term_months, fields.term_miles, price)
+            if fields.term_months or fields.term_miles
+            else None
+        )
+        if (key_a and key_a in seen_keys) or (key_b and key_b in seen_keys):
+            continue
+        if key_a:
+            seen_keys.append(key_a)
+        if key_b:
+            seen_keys.append(key_b)
+        kept.append(fields)
+    return kept
+
+
 def _cluster_products(
     succeeded: list[DocumentExtraction],
 ) -> list[tuple[ProductType, list[tuple[str, ProductFields]]]]:
@@ -591,7 +641,7 @@ def _cluster_products(
     """
     by_type: dict[ProductType, list[tuple[str, ProductFields]]] = {}
     for extraction in succeeded:
-        for fields in extraction.products:
+        for fields in _dedupe_within_reader(extraction.products):
             product_type = classify_product_type(fields.product_type or "")
             by_type.setdefault(product_type, []).append(
                 (extraction.source, fields)
