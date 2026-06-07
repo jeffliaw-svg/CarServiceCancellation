@@ -39,6 +39,21 @@ def generate_authorization(
     lines: list[str] = []
     lines.append("LIMITED AUTHORIZATION AND POWER OF ATTORNEY")
     lines.append("")
+    lines.append("In plain English:")
+    lines.append(
+        f"   This one-page form lets {service_name} ask the companies on your"
+    )
+    lines.append(
+        "   behalf to cancel your add-on products and issue the pro-rata refunds"
+    )
+    lines.append(
+        "   you are owed. It does not let us touch your money -- every refund"
+    )
+    lines.append(
+        "   goes directly to you, at the address you list below. You may"
+    )
+    lines.append("   revoke this authorization in writing at any time.")
+    lines.append("")
     lines.append(f"Date: {_date_str(today)}")
     lines.append("")
     lines.append(

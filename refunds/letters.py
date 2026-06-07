@@ -236,7 +236,10 @@ def generate_letter(
     lines.append("")
     lines.append("_______________________________")
     lines.append(seller.legal_name)
-    lines.append(f"(by {service_name}, as authorized agent)")
+    lines.append(
+        f"(Prepared with assistance from {service_name}, on the contract "
+        f"holder's behalf.)"
+    )
 
     return Letter(
         case_id=case.case_id,

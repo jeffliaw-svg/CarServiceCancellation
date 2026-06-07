@@ -20,7 +20,7 @@ const HEADING_ID = "wizard-heading";
 const FIELD_LABEL: Record<string, string> = {
   price: "the price",
   contract_number: "the contract number",
-  administrator: "the administrator",
+  administrator: "the provider",
   term_months: "the term in months",
   term_miles: "the term in miles",
 };
@@ -167,6 +167,10 @@ function StepIntake({ advance, guard, busy }: StepProps) {
   const [accessCode, setAccessCode] = useState(
     () => localStorage.getItem("refundroute_access_code") || "",
   );
+  // Hide the access-code field behind a disclosure so cold visitors from
+  // the landing page don't think the code is a hard prerequisite. The
+  // disclosure opens automatically if a code is already on file.
+  const [codeOpen, setCodeOpen] = useState(() => !!accessCode);
 
   const codeId = useId();
   const nameId = useId();
@@ -215,12 +219,14 @@ function StepIntake({ advance, guard, busy }: StepProps) {
             requests.
           </li>
           <li>
-            Your uploaded documents are stored privately, and never sold or
-            shared.
+            Your documents sit on our private server while your case is
+            active. We never sell, share, or train on them, and we delete
+            your case 90 days after you finish (or sooner on request).
           </li>
           <li>
-            Starting a claim is free — you will see any fee before you
-            download your packet.
+            Starting a claim is free during the closed beta. If we add a
+            fee later, you&rsquo;ll see and confirm it before you download
+            your packet — never as a surprise at the end.
           </li>
         </ul>
         <p className="mt-2 text-xs text-accent-deep/80">
@@ -230,18 +236,42 @@ function StepIntake({ advance, guard, busy }: StepProps) {
       <div className="rounded-3xl border border-line bg-surface p-7">
         <div className="grid gap-5">
           <div>
-            <Label htmlFor={codeId}>Access code</Label>
-            <input
-              id={codeId}
-              className="field"
-              value={accessCode}
-              onChange={(e) => setAccessCode(e.target.value)}
-              placeholder="Closed-beta access code"
-              autoComplete="off"
-            />
-            <p className="mt-1.5 text-xs text-muted">
-              RefundRoute is in a closed beta. Enter the code you were given.
-            </p>
+            {codeOpen ? (
+              <>
+                <Label htmlFor={codeId}>Beta access code</Label>
+                <input
+                  id={codeId}
+                  className="field"
+                  value={accessCode}
+                  onChange={(e) => setAccessCode(e.target.value)}
+                  placeholder="Closed-beta access code"
+                  autoComplete="off"
+                  autoFocus
+                />
+                <p className="mt-1.5 text-xs text-muted">
+                  Enter the code you were given. Don&rsquo;t have one?{" "}
+                  <button
+                    type="button"
+                    className="font-medium text-accent hover:underline"
+                    onClick={() => {
+                      setAccessCode("");
+                      setCodeOpen(false);
+                    }}
+                  >
+                    Skip this
+                  </button>
+                  .
+                </p>
+              </>
+            ) : (
+              <button
+                type="button"
+                className="text-xs font-medium text-accent hover:underline"
+                onClick={() => setCodeOpen(true)}
+              >
+                Have a beta code?
+              </button>
+            )}
           </div>
           <div>
             <Label htmlFor={nameId}>Your full legal name</Label>
@@ -897,7 +927,7 @@ function StepGenerate({ view, token, setView, guard, busy }: StepProps) {
         ))}
       </div>
       <div className="mt-6 rounded-2xl bg-sand px-6 py-5 text-sm leading-relaxed text-muted">
-        <strong className="text-ink">Before you mail:</strong> the administrator
+        <strong className="text-ink">Before you mail:</strong> the provider
         addresses were gathered from public sources and should be confirmed,
         and you must sign the authorization. The mailing checklist walks you
         through enclosing your bill of sale and sending each letter certified.

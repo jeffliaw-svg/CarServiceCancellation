@@ -102,8 +102,8 @@ export function Footer() {
           </p>
           <p className="mt-4 text-sm leading-relaxed text-muted">
             RefundRoute is not a law firm and does not provide legal advice.
-            Refund figures are estimates; each administrator calculates the
-            binding amount under the terms of your contract.
+            Refund figures are estimates. The provider calculates the final
+            amount under the terms of your contract.
           </p>
         </div>
       </div>

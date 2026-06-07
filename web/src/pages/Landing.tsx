@@ -3,9 +3,6 @@ import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Footer, Logo, Reveal } from "../components/site";
 
-// Flat fee shown on the pricing card -- adjust to taste.
-const PRICE = "$49";
-
 const STEPS = [
   {
     n: "01",
@@ -46,11 +43,15 @@ const FAQ = [
   },
   {
     q: "How much can I actually get back?",
-    a: "It depends on how much of each contract was unused when you sold the car. A multi-year service contract cancelled early can refund several hundred to a couple thousand dollars. The figures we show are estimates -- each administrator calculates the binding amount.",
+    a: "It depends on how much of each contract was unused when you sold the car. A multi-year service contract cancelled early can refund several hundred to a couple thousand dollars. The figures we show are estimates. The provider (the company that administers your contract) calculates the final amount.",
   },
   {
     q: "Are you a law firm?",
     a: "No. RefundRoute is not a law firm and does not give legal advice. Cancelling an add-on after you sell the car is a routine contractual right -- you simply authorize us to prepare the request on your behalf.",
+  },
+  {
+    q: "What happens to my contract after I upload it?",
+    a: "Your documents and details are stored privately on our server while your case is active so you can come back and finish. We read them with our own software and a vetted OCR provider; we don't sell, share, or train on anything you upload. You can email hello@refundroute.example to delete your case at any time, and we delete it automatically 90 days after you finish.",
   },
 ];
 
@@ -197,7 +198,7 @@ export default function Landing() {
               className="mt-9 flex flex-wrap items-center gap-3"
             >
               <Link to="/start" className="btn btn-primary">
-                Start a claim &rarr;
+                See what you&rsquo;re owed &rarr;
               </Link>
               <a href="#how" className="btn btn-ghost">
                 See how it works
@@ -306,22 +307,19 @@ export default function Landing() {
               Pricing
             </p>
             <h2 className="font-display mt-3 text-4xl md:text-5xl">
-              One flat fee. No guesswork.
+              Free during the closed beta.
             </h2>
           </Reveal>
           <Reveal delay={0.1}>
             <div className="mt-10 rounded-3xl border border-line bg-surface p-10 text-left shadow-[0_30px_60px_-40px_rgba(20,17,15,0.4)]">
               <div className="flex items-baseline gap-2">
-                <span className="font-display text-6xl">{PRICE}</span>
-                <span className="text-muted">per claim packet</span>
+                <span className="font-display text-6xl">$0</span>
+                <span className="text-muted">while we&rsquo;re in beta</span>
               </div>
               <p className="mt-4 text-muted">
-                Covers the full workup for one vehicle, however many add-on
-                products it carried.
-              </p>
-              <p className="mt-3 text-sm text-muted">
-                RefundRoute prepares your claim; you print, sign, and mail it.
-                Refund figures are estimates, not guaranteed amounts.
+                Starting a claim is free today. Before any future fee, we will
+                show you what it costs and ask you to confirm — never as a
+                surprise at the end.
               </p>
               <ul className="mt-7 space-y-3 text-sm">
                 {[
@@ -343,6 +341,10 @@ export default function Landing() {
               >
                 Start a claim &rarr;
               </Link>
+              <p className="mt-4 text-center text-xs text-muted">
+                Refund figures are estimates. The provider calculates the
+                final amount.
+              </p>
             </div>
           </Reveal>
         </div>
