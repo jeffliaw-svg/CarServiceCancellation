@@ -371,6 +371,12 @@ function StepIntake({ advance, guard, busy }: StepProps) {
 
 /* ------------------------------------------------------------------ */
 
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 function FileRow({
   title,
   hint,
@@ -384,12 +390,26 @@ function FileRow({
   hint: string;
   accept: string;
   fileName?: string;
-  onPick: (file: File) => void;
+  onPick: (file: File) => Promise<void> | void;
   busy: boolean;
   allowCamera?: boolean;
 }) {
   const [dragging, setDragging] = useState(false);
+  const [uploading, setUploading] = useState<{ name: string; size: number } | null>(
+    null,
+  );
   const cameraRef = useRef<HTMLInputElement | null>(null);
+
+  async function handlePick(file: File) {
+    setUploading({ name: file.name, size: file.size });
+    try {
+      await onPick(file);
+    } finally {
+      setUploading(null);
+    }
+  }
+
+  const locked = uploading !== null || busy;
 
   return (
     <div>
@@ -398,7 +418,7 @@ function FileRow({
           dragging
             ? "border-accent bg-accent-soft"
             : "border-line hover:border-accent"
-        } ${busy ? "pointer-events-none opacity-60" : ""}`}
+        } ${locked ? "pointer-events-none opacity-60" : ""}`}
         onDragOver={(e) => {
           e.preventDefault();
           if (!dragging) setDragging(true);
@@ -408,7 +428,7 @@ function FileRow({
           e.preventDefault();
           setDragging(false);
           const file = e.dataTransfer.files?.[0];
-          if (file) onPick(file);
+          if (file) handlePick(file);
         }}
       >
         <div>
@@ -427,16 +447,32 @@ function FileRow({
           className="file-input"
           onChange={(e) => {
             const file = e.target.files?.[0];
-            if (file) onPick(file);
+            if (file) handlePick(file);
           }}
         />
       </label>
-      {allowCamera && (
+      {uploading && (
+        <div
+          aria-live="polite"
+          className="mt-2 rounded-xl border border-line bg-surface px-4 py-3"
+        >
+          <div className="flex items-center justify-between gap-3 text-xs text-muted">
+            <span className="truncate">
+              Uploading <span className="font-medium text-ink">{uploading.name}</span> · {formatBytes(uploading.size)}
+            </span>
+            <span>Reading your contract…</span>
+          </div>
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-sand">
+            <div className="indeterminate h-full w-1/3 rounded-full bg-accent" />
+          </div>
+        </div>
+      )}
+      {allowCamera && !uploading && (
         <div className="mt-2">
           <button
             type="button"
             disabled={busy}
-            className="inline-flex items-center gap-1.5 text-xs font-medium text-accent hover:underline disabled:opacity-50"
+            className="inline-flex min-h-11 items-center gap-1.5 px-1 text-xs font-medium text-accent hover:underline disabled:opacity-50"
             onClick={() => cameraRef.current?.click()}
           >
             <span aria-hidden="true">📷</span> Take a photo instead
@@ -450,7 +486,7 @@ function FileRow({
             className="file-input"
             onChange={(e) => {
               const file = e.target.files?.[0];
-              if (file) onPick(file);
+              if (file) handlePick(file);
             }}
           />
         </div>
@@ -573,32 +609,44 @@ function StepDocuments({
           busy={busy}
           allowCamera
         />
-        <div className="text-center">
-          <button
-            className="text-xs font-medium text-accent hover:underline"
-            onClick={() => setShowPaste((s) => !s)}
-          >
-            {showPaste ? "Hide" : "…or paste the contract text instead"}
-          </button>
-        </div>
-        {showPaste && (
-          <div>
-            <textarea
-              className="field font-mono text-xs"
-              rows={6}
-              value={pasted}
-              onChange={(e) => setPasted(e.target.value)}
-              placeholder="Paste the itemized add-on section of your contract here…"
-            />
+        <div className="rounded-2xl border border-line bg-paper px-5 py-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium">
+                Don&rsquo;t have the contract handy?
+              </p>
+              <p className="mt-0.5 text-xs text-muted">
+                You can paste the itemized add-on section in as text — works
+                just as well as a photo.
+              </p>
+            </div>
             <button
-              className="btn btn-ghost mt-3 !py-2 !text-xs"
-              disabled={!pasted.trim() || busy}
-              onClick={uploadPasted}
+              type="button"
+              className="btn btn-ghost min-h-11 !py-2 !text-xs"
+              onClick={() => setShowPaste((s) => !s)}
             >
-              Read pasted text
+              {showPaste ? "Hide" : "Paste text instead"}
             </button>
           </div>
-        )}
+          {showPaste && (
+            <div className="mt-4">
+              <textarea
+                className="field font-mono text-xs"
+                rows={6}
+                value={pasted}
+                onChange={(e) => setPasted(e.target.value)}
+                placeholder="Paste the itemized add-on section of your contract here…"
+              />
+              <button
+                className="btn btn-primary mt-3 !py-2 !text-xs"
+                disabled={!pasted.trim() || busy}
+                onClick={uploadPasted}
+              >
+                Read pasted text
+              </button>
+            </div>
+          )}
+        </div>
 
         <FileRow
           title="Bill of sale (recommended)"
@@ -852,6 +900,209 @@ const KIND_LABEL: Record<string, string> = {
   bundle: "Everything, zipped",
 };
 
+const PIPELINE_STORAGE = "refundroute_pipeline";
+
+function GenerateProgress({ count }: { count: number }) {
+  const stages = [
+    `Drafting ${count} letter${count === 1 ? "" : "s"}`,
+    "Preparing your authorization",
+    "Writing your mailing checklist",
+    "Bundling everything up",
+  ];
+  const [stage, setStage] = useState(0);
+  useEffect(() => {
+    if (stage >= stages.length - 1) return;
+    const t = window.setTimeout(() => setStage((s) => s + 1), 1100);
+    return () => window.clearTimeout(t);
+  }, [stage, stages.length]);
+
+  return (
+    <div className="rounded-3xl border border-line bg-surface p-8">
+      <p className="text-xs font-semibold uppercase tracking-widest text-accent">
+        Drafting your packet
+      </p>
+      <ul className="mt-5 space-y-3" aria-live="polite">
+        {stages.map((label, i) => {
+          const done = i < stage;
+          const active = i === stage;
+          return (
+            <li key={label} className="flex items-center gap-3 text-sm">
+              <span
+                className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold ${
+                  done
+                    ? "bg-accent text-white"
+                    : active
+                      ? "bg-ink text-white"
+                      : "bg-sand text-muted"
+                }`}
+                aria-hidden="true"
+              >
+                {done ? "✓" : i + 1}
+              </span>
+              <span
+                className={
+                  done ? "text-muted" : active ? "font-medium text-ink" : "text-muted"
+                }
+              >
+                {label}
+              </span>
+              {active && (
+                <span className="ml-2 inline-flex h-1.5 w-16 overflow-hidden rounded-full bg-sand">
+                  <span className="indeterminate h-full w-1/3 rounded-full bg-accent" />
+                </span>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+type PipelineStep = "print" | "sign" | "mail";
+
+function MailingPipeline({ caseId }: { caseId: string }) {
+  const storageKey = `${PIPELINE_STORAGE}_${caseId}`;
+  const [checked, setChecked] = useState<Record<PipelineStep, boolean>>(() => {
+    try {
+      const raw = localStorage.getItem(storageKey);
+      if (raw) return JSON.parse(raw);
+    } catch {
+      /* ignore */
+    }
+    return { print: false, sign: false, mail: false };
+  });
+
+  useEffect(() => {
+    localStorage.setItem(storageKey, JSON.stringify(checked));
+  }, [storageKey, checked]);
+
+  const steps: { key: PipelineStep; title: string; body: string }[] = [
+    {
+      key: "print",
+      title: "Print the packet",
+      body: "Use letter-size paper. The mailing checklist sits on top.",
+    },
+    {
+      key: "sign",
+      title: "Sign the authorization",
+      body: "One signature on the authorization page. Notary only if your packet says so.",
+    },
+    {
+      key: "mail",
+      title: "Mail each letter Certified",
+      body: "USPS Certified Mail with Return Receipt for every letter. Keep the green slips.",
+    },
+  ];
+
+  function toggle(key: PipelineStep) {
+    setChecked((current) => ({ ...current, [key]: !current[key] }));
+  }
+
+  return (
+    <div className="rounded-2xl border border-line bg-surface p-6">
+      <p className="text-xs font-semibold uppercase tracking-widest text-accent">
+        Your next 20 minutes
+      </p>
+      <ol className="mt-4 grid gap-3 sm:grid-cols-3">
+        {steps.map((step, index) => {
+          const isChecked = checked[step.key];
+          return (
+            <li key={step.key}>
+              <button
+                type="button"
+                onClick={() => toggle(step.key)}
+                aria-pressed={isChecked}
+                className={`flex h-full w-full flex-col rounded-2xl border p-4 text-left transition ${
+                  isChecked
+                    ? "border-accent bg-accent-soft"
+                    : "border-line bg-paper hover:border-accent"
+                }`}
+              >
+                <div className="flex items-center gap-2 text-sm font-semibold">
+                  <span
+                    className={`flex h-6 w-6 items-center justify-center rounded-full text-xs ${
+                      isChecked ? "bg-accent text-white" : "bg-sand text-muted"
+                    }`}
+                    aria-hidden="true"
+                  >
+                    {isChecked ? "✓" : index + 1}
+                  </span>
+                  <span>{step.title}</span>
+                </div>
+                <p className="mt-2 text-xs leading-relaxed text-muted">
+                  {step.body}
+                </p>
+              </button>
+            </li>
+          );
+        })}
+      </ol>
+    </div>
+  );
+}
+
+function WhatHappensNext() {
+  return (
+    <details className="group rounded-2xl border border-line bg-surface p-6" open>
+      <summary className="flex cursor-pointer items-center justify-between gap-4">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-widest text-accent">
+            What happens next
+          </p>
+          <p className="mt-1 text-sm font-semibold">
+            How long this usually takes, and what to expect.
+          </p>
+        </div>
+        <span className="text-2xl text-accent transition-transform group-open:rotate-45" aria-hidden="true">
+          +
+        </span>
+      </summary>
+      <div className="mt-4 space-y-4 text-sm leading-relaxed text-muted">
+        <div>
+          <p className="font-medium text-ink">Week 1</p>
+          <p>
+            Your Certified Mail letters arrive. The provider opens a file and
+            requests anything they still need (often: a clean copy of the bill
+            of sale, or a payoff letter from the lender).
+          </p>
+        </div>
+        <div>
+          <p className="font-medium text-ink">Weeks 2–6</p>
+          <p>
+            Most providers acknowledge the cancellation in writing within 2–3
+            weeks. A check (or a credit to the lender on a financed contract)
+            usually follows within 4–6 weeks. Tire and Wheel and prepaid
+            maintenance tend to be the fastest; multi-year vehicle service
+            contracts can take the longest.
+          </p>
+        </div>
+        <div>
+          <p className="font-medium text-ink">If you get a denial or a stall</p>
+          <p>
+            A common refusal is &ldquo;you must cancel through the selling
+            dealer.&rdquo; That is sometimes true and sometimes a deflection;
+            forward the letter to{" "}
+            <a className="text-accent hover:underline" href="mailto:hello@refundroute.example">
+              hello@refundroute.example
+            </a>{" "}
+            and we&rsquo;ll tell you whether to push back or re-mail to the
+            dealer.
+          </p>
+        </div>
+        <div>
+          <p className="font-medium text-ink">After 30 days of silence</p>
+          <p>
+            Send a polite follow-up referencing your Certified Mail tracking
+            number. If 60 days pass with no response, that&rsquo;s the point at
+            which most state insurance departments will accept a complaint.
+          </p>
+        </div>
+      </div>
+    </details>
+  );
+}
+
 function StepGenerate({ view, token, setView, guard, busy }: StepProps) {
   if (!view) return null;
   const done = view.generated.length > 0;
@@ -869,20 +1120,23 @@ function StepGenerate({ view, token, setView, guard, busy }: StepProps) {
           title="Generate your refund packet"
           lead="We will draft a certified-mail letter for each confirmed service, plus an authorization for you to sign and a mailing checklist."
         />
-        <div className="rounded-3xl border border-line bg-surface p-8 text-center">
-          <p className="mx-auto max-w-md text-muted">
-            {view.products.length} letter
-            {view.products.length === 1 ? "" : "s"} ready to be drafted for{" "}
-            <strong className="text-ink">{view.seller.legal_name}</strong>.
-          </p>
-          <button
-            className="btn btn-primary mt-6"
-            disabled={busy}
-            onClick={generate}
-          >
-            {busy ? "Drafting your letters…" : "Generate my letters"}
-          </button>
-        </div>
+        {busy ? (
+          <GenerateProgress count={view.products.length} />
+        ) : (
+          <div className="rounded-3xl border border-line bg-surface p-8 text-center">
+            <p className="mx-auto max-w-md text-muted">
+              {view.products.length} letter
+              {view.products.length === 1 ? "" : "s"} ready to be drafted for{" "}
+              <strong className="text-ink">{view.seller.legal_name}</strong>.
+            </p>
+            <button
+              className="btn btn-primary mt-6"
+              onClick={generate}
+            >
+              Generate my letters
+            </button>
+          </div>
+        )}
       </Panel>
     );
   }
@@ -926,12 +1180,21 @@ function StepGenerate({ view, token, setView, guard, busy }: StepProps) {
           </a>
         ))}
       </div>
-      <div className="mt-6 rounded-2xl bg-sand px-6 py-5 text-sm leading-relaxed text-muted">
-        <strong className="text-ink">Before you mail:</strong> the provider
-        addresses were gathered from public sources and should be confirmed,
-        and you must sign the authorization. The mailing checklist walks you
-        through enclosing your bill of sale and sending each letter certified.
+
+      <div className="mt-6">
+        <MailingPipeline caseId={view.case_id} />
       </div>
+
+      <div className="mt-6">
+        <WhatHappensNext />
+      </div>
+
+      <div className="mt-6 rounded-2xl bg-sand px-6 py-5 text-xs leading-relaxed text-muted">
+        Provider addresses came from public sources and should be double-checked
+        before you mail. Refund figures are estimates. The provider calculates
+        the final amount.
+      </div>
+
       <div className="mt-6 text-center">
         <Link to="/" className="text-sm font-medium text-accent hover:underline">
           Back to home

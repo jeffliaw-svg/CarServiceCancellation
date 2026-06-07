@@ -184,6 +184,14 @@ summary:focus-visible,
   animation: pulse-amber 1.2s ease-in-out;
 }
 
+@keyframes indeterminate {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
+}
+.indeterminate {
+  animation: indeterminate 1.4s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
@@ -197,4 +205,5 @@ summary:focus-visible,
   }
   .skip-link { transition: none; }
   .pulse-amber { animation: none; }
+  .indeterminate { animation: none; transform: none; width: 100%; opacity: 0.7; }
 }
